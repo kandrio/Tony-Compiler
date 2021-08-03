@@ -8,8 +8,10 @@
 #include <vector>
 #include <string>
 #include "symbol.hpp"
+#include "type.hpp"
 
 void yyerror(const char *msg);
+
 
 class AST {
 public:
@@ -24,27 +26,22 @@ inline std::ostream& operator<< (std::ostream &out, const AST &t) {
   return out;
 }
 
-inline std::ostream& operator<< (std::ostream &out, Type t) {
-  switch (t)
-  {
-    case TYPE_int: out << "<Type type=\"int\">"; break;
-    case TYPE_bool: out << "<Type type=\"bool\">"; break;
-    case TYPE_char: out << "<Type type=\"char\">"; break;
-    case TYPE_array: out << "<Type type=\"array\">"; break;
-    case TYPE_list: out << "<Type type=\"list\">"; break;
-    default: out << "<Type type=\"invalid\">"; break;
-  }
-  return out;
-}
-
 
 class Expr: public AST {
 public:
-  bool type_check(Type t) {
+  bool type_check(Type* t) {
     sem();
-    return (type == t);
+    return check_type_equality(t, type);
   }
-  Type get_type() {
+  bool type_check(TypeBlock t) {
+    /*
+      This is just an overloading of the method above.
+      It is used for simpler cases.
+    */    
+    sem();
+    return (t == type->get_current_type() && type->get_nested_type() == nullptr);
+  }
+  Type* get_type() {
     /* 
       We want to be able to access `type` from a pointer to an `Expr`.
       But `type` is protected, so we need this `public` method.
@@ -52,7 +49,7 @@ public:
     return type;
   }
 protected:
-  Type type;
+  Type* type;
 };
 
 class Stmt: public AST {
@@ -73,7 +70,7 @@ public:
     out << "<Id name=\"" << var << "\"> ";
   }
 
-  void setType(Type t){
+  void setType(Type* t){
     type = t;
   }
 
@@ -88,16 +85,17 @@ private:
 };
 
 
-
-class Array: public Atom {
+class ArrayElement: public Atom {
 public:
-  Array(Atom *a, Expr *e): atom(a), expr(e) {}
-  ~Array() {delete atom; delete expr;}
+  ArrayElement(Atom *a, Expr *e): atom(a), expr(e) {}
+  ~ArrayElement() {delete atom; delete expr;}
   void printOn(std::ostream &out) const override {
-    out << "\n<Array>\n" << *atom << "\n" << *expr << "\n</Array>\n";
+    out << "\n<ArrayElement>\n" << *atom << "\n" << *expr << "\n</ArrayElement>\n";
   }
   void sem() override {
-    type = TYPE_array;
+    // FIXME: `type` here should be the type of the element of the array not the type
+    // of the array itself.
+    type = new Type(TYPE_array, nullptr);
   }
 private:
   Atom *atom;
@@ -123,7 +121,7 @@ public:
     out << "<CharConst value='"<< char_const << "\' ascii="<< (int) char_const << "> ";
   }
   void sem() override {
-    type = TYPE_char;
+    type = new Type(TYPE_char, nullptr);
   }
 private:
   unsigned char char_const;
@@ -137,7 +135,7 @@ public:
     out << "<IntConst value=" << num << "> ";
   }
   void sem() override {
-    type = TYPE_int;
+    type = new Type(TYPE_int, nullptr);
   }
 private:
   int num;
@@ -146,13 +144,13 @@ private:
 
 class New: public Expr {
 public:
-  New(Type t, Expr *right): typ(t), expr(right){}
-  ~New() {delete expr;}
+  New(Type *t, Expr *right): type_of_elems(t), expr(right) {}
+  ~New() {delete type_of_elems; delete expr;}
   void printOn(std::ostream &out) const override {
-    out << "<New> " << typ << *expr << "</New> ";
+    out << "<New> " << type_of_elems << *expr << "</New> ";
   }
 private:
-  Type typ;
+  Type *type_of_elems;
   Expr *expr;
 };
 
@@ -173,7 +171,7 @@ public:
     out << "<Boolean value=" << boolean_value << "> ";
   }
   void sem() override {
-    type = TYPE_bool;
+    type = new Type(TYPE_bool, nullptr);
   }
 private:
   std::string boolean_value;
@@ -190,22 +188,22 @@ public:
   void sem() {
     if (op == "+" || op == "-" || op == "*" || op == "/" || op == "mod") {
       if (!left->type_check(TYPE_int) || !right->type_check(TYPE_int)) {
-        // NOTE: We must be more specific in our errors. This is temporary.
+        // TODO: We must be more specific in our errors. This is temporary.
         yyerror("Type mismatch. Both expressions must be of type 'int'.\n");
       }
-      type = TYPE_int;
+      type = new Type(TYPE_int, nullptr);
     } else if (op == "=" || op == "<>" || op == "<" || op == ">" || op == "<=" || op == ">=") {
       left->sem();
       right->sem();
       if (left->get_type() != right->get_type()) {
         yyerror("Type mismatch. Expressions must have the same type.\n");
       }
-      type = TYPE_bool;
+      type = new Type(TYPE_bool, nullptr);
     } else if (op == "and" || op == "or") {
       if (!left->type_check(TYPE_bool) || !right->type_check(TYPE_bool)) {
         yyerror("Type mismatch. Both expressions must be of type 'bool'.\n");
       }
-      type = TYPE_bool;
+      type = new Type(TYPE_bool, nullptr);
     }
     // TODO: A case for the `#` binary operator.
   }
@@ -228,12 +226,12 @@ public:
       if (!right->type_check(TYPE_int)) {
         yyerror("Type mismatch. Expression must be of type 'int'.");
       }
-      type = TYPE_int;
+      type = new Type(TYPE_int, nullptr);
     } else if (op == "not") { 
       if (!right->type_check(TYPE_bool)) {
         yyerror("Type mismatch. Expression must be of type 'bool'.");
       }
-      type = TYPE_bool;
+      type = new Type(TYPE_bool, nullptr);
     }
   }
 private:
@@ -251,7 +249,7 @@ public:
   void append(Id * id) {
     ids.push_back(id);
   }
-  void set_type(Type t) {
+  void set_type(Type* t) {
     type = t;
   }
 
@@ -270,7 +268,7 @@ public:
 
 protected:
   std::vector<Id *> ids;
-  Type type;
+  Type* type;
 };
 
 
@@ -323,7 +321,7 @@ private:
 // Sem should probably include name of header somewhere?
 class Header: public AST {
 public:
-  Header(Type t, Id *name, FormalList *f): type(t), formals(f), id(name), isTyped(true) {}
+  Header(Type *t, Id *name, FormalList *f): type(t), formals(f), id(name), isTyped(true) {}
   Header(Id *name, FormalList *f): formals(f), id(name), isTyped(false) {}
   ~Header(){ delete formals; delete id;}
   void printOn(std::ostream &out) const override {
@@ -348,8 +346,8 @@ public:
   }
 
 private:
-  Type type;
-  FormalList* formals;
+  Type *type;
+  FormalList *formals;
   Id *id;
   bool isTyped;
 };

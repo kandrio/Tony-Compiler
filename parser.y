@@ -61,7 +61,7 @@ SymbolTable st;
     Simple *simple;
     Stmt *stmt;
     StmtBody *stmtbody;
-    Type type;
+    Type *type;
     VarList *varlist;
     Formal *formal;
     FormalList *formallist;
@@ -151,11 +151,11 @@ Var_Comma:
 ;
 
 Type:
-    "int"   {$$ = TYPE_int;}
-|   "char"  {$$ = TYPE_char;}
-|   "bool"  {$$ = TYPE_bool;}
-|   Type '[' ']'        {$$ = TYPE_array;}
-|   "list" '[' Type ']' {$$ = TYPE_list;}
+    "int"   {$$ = new Type(TYPE_int, nullptr);}
+|   "char"  {$$ = new Type(TYPE_char, nullptr);}
+|   "bool"  {$$ = new Type(TYPE_bool, nullptr);}
+|   Type '[' ']'        {$$ = new Type(TYPE_array, $1);}
+|   "list" '[' Type ']' {$$ = new Type(TYPE_list, $3);}
 ;
 
 Stmt:
@@ -228,7 +228,7 @@ Expr_Comma:
 Atom:
     T_id                {$$ = new Id(std::string($1));}
 |   T_string            {$$ = new StringLiteral(std::string($1));}
-|   Atom '[' Expr ']'   {$$ = new Array($1, $3);}
+|   Atom '[' Expr ']'   {$$ = new ArrayElement($1, $3);}
 |   Call                {$$ = $1;}
 ;
 

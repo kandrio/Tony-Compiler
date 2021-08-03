@@ -5,15 +5,14 @@
 #include <vector>
 #include <map>
 #include <iostream>
+#include "type.hpp"
 
 void yyerror(const char *msg);
 
-enum Type {TYPE_int, TYPE_bool, TYPE_char, TYPE_array, TYPE_list};
-
 struct SymbolEntry {
-    Type type;
+    Type* type;
     SymbolEntry() {}
-    SymbolEntry(Type t) : type(t) {};
+    SymbolEntry(Type* t) : type(t) {};
 };
 
 class Scope {
@@ -24,7 +23,7 @@ public:
         return &locals[c];
         
     }
-    void insert(std::string c, Type t){
+    void insert(std::string c, Type* t){
         if (locals.find(c) != locals.end()) ;//yyerror("Variable already declared");
         locals[c] = SymbolEntry(t);
         ++size;
@@ -52,7 +51,7 @@ public:
         //yyerror("Variable not found");
         return nullptr;
     }
-    void insert(std::string c, Type t){
+    void insert(std::string c, Type* t){
         scopes.back().insert(c, t);
     }
     void openScope(){
