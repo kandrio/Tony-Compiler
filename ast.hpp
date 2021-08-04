@@ -12,6 +12,7 @@
 
 void yyerror(const char *msg);
 
+bool check_type_equality(Type* type1, Type* type2);
 
 class AST {
 public:
@@ -166,6 +167,9 @@ public:
   void printOn(std::ostream &out) const override {
     out << "<Nil> ";
   }
+  void sem() override {
+    type = new Type(TYPE_list, nullptr);
+  }
 };
 
 
@@ -190,7 +194,7 @@ public:
   void printOn(std::ostream &out) const override {
     out << "\n<Binop op=\"" << op << "\">\n" << *left << *right << "\n</BinOp>\n";
   }
-  void sem() {
+  void sem() override {
     if (op == "+" || op == "-" || op == "*" || op == "/" || op == "mod") {
       if (!left->type_check(TYPE_int) || !right->type_check(TYPE_int)) {
         // TODO: We must be more specific in our errors. This is temporary.
@@ -200,7 +204,7 @@ public:
     } else if (op == "=" || op == "<>" || op == "<" || op == ">" || op == "<=" || op == ">=") {
       left->sem();
       right->sem();
-      if (left->get_type() != right->get_type()) {
+      if (!check_type_equality(left->get_type(), right->get_type())) {
         yyerror("Type mismatch. Expressions must have the same type.\n");
       }
       type = new Type(TYPE_bool, nullptr);
@@ -209,8 +213,25 @@ public:
         yyerror("Type mismatch. Both expressions must be of type 'bool'.\n");
       }
       type = new Type(TYPE_bool, nullptr);
+    } else if (op == "#") {
+      left->sem();
+      right->sem();
+
+      if (right->get_type()->get_current_type() != TYPE_list) {
+        yyerror("Type mismatch. Expression on the right of '#' operator \
+                must be a list.\n");
+      }
+
+      if (right->get_type()->get_nested_type() != nullptr && 
+          !check_type_equality(left->get_type(), right->get_type()->get_nested_type())) {
+        yyerror("Type mismatch. Expression on the left of '#' operator \
+                must be have the same type as the elements of the list on the right \
+                of the operator.\n");
+      }
+      type = new Type(TYPE_list, left->get_type());
+    } else {
+      yyerror("Wrong binary operator.\n");
     }
-    // TODO: A case for the `#` binary operator.
   }
 private:
   Expr *left;
@@ -413,11 +434,12 @@ public:
     out << "\n<Assign>\n" << *atom << *expr << "\n</Assign>\n";
   }
   void sem() override {
-    // NOTE: Here, we should `type_check` that `expr` has the same
+    // TODO: Here, we should `type_check` that `expr` has the same
     // type as the `atom` that's on the left.
     
     //expr->sem();
     atom->sem();
+    expr->sem();
   }
 private:
   Atom *atom;
