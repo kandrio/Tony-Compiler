@@ -19,11 +19,10 @@ parser.hpp parser.cpp: parser.y
 parser.o: parser.cpp lexer.hpp
 
 tony: lexer.o parser.o
-	$(CXX) $(CXXFLAGS) -o tony lexer.o parser.o
+	$(CXX) $(CXXFLAGS) -o tony lexer.o parser.o type.cpp
 
 lextest: lexer_pure.cpp
 	$(CXX) $(CXXFLAGS) -o lextest lexer_pure.cpp
-	
 
 clean:
 	$(RM) lexer.cpp lexer_pure.cpp parser.cpp parser.hpp parser.output *.o
