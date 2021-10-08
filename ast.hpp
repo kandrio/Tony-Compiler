@@ -264,13 +264,11 @@ public:
     */
     return type;
   }
+
   void setLLVMType(llvm::Type* t) {
     LLVMType = t;
   }
 
-  llvm::Type* getLLVMType() {
-    return LLVMType;
-  }
 protected:
   TonyType* type;
   llvm::Type* LLVMType;
@@ -469,7 +467,7 @@ private:
 
 /*
  *  This is a constant value (check Tony language description).
-    It is equal to an empty list and has type: list[t], where `t` can be any type.
+ *  It is equal to an empty list and has type: list[t], where `t` can be any type.
  */
 class Nil: public Expr {
 public:
@@ -482,15 +480,7 @@ public:
     type = new TonyType(TYPE_list, new TonyType(TYPE_any, nullptr));
   }
 
-  // Not implemented yet
   virtual llvm::Value *compile() override {
-    /*
-    llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(16)}, "newtmp");
-    llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
-    llvm::Value *h = Builder.CreateGEP(n, {c32(0), c32(0)}, "headptr");
-    Builder.CreateStore(c8(0), h); 
-    return n;         
-    */
     return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(LLVMType));    
   }
 };
@@ -567,11 +557,21 @@ public:
 
   virtual llvm::Value *compile() override{
     llvm::Value *l = left->compile();
-    std::cout << "Everything ok under left->compilie()\n";
-    LLVMType = getOrCreateLLVMTypeFromTonyType(type);
-    right->setLLVMType(LLVMType);
+
+    if (op == "#") {
+
+      // We construct the 'complex' LLVM type for the list.
+      LLVMType = getOrCreateLLVMTypeFromTonyType(type);
+
+      if (is_nil_constant(right->get_type())) {
+        // `nil` can't know the type of the list that it's used in,
+        // so we must pass it explicitly in order to construct a null
+        // LLVM pointer of the same type (in `compile`).
+        right->setLLVMType(LLVMType);
+      }
+    }
+
     llvm::Value *r = right->compile();
-    std::cout << "Everything ok under right->compilie()\n";
     
     if(op ==  "+")          return Builder.CreateAdd(l, r, "addtmp");
     else if(op ==  "-")     return Builder.CreateSub(l, r, "subtmp");
@@ -587,23 +587,19 @@ public:
     else if(op ==  "and")   return Builder.CreateAnd(l,r, "andtmp");
     else if(op ==  "or")    return Builder.CreateOr(l,r, "ortmp");
     else if(op ==  "#") {
-      //TODO: Calculate size for all types.
-      int size = 8 + left->get_type()->get_data_size_of_type();
+
+      // 8 bytes are used for the pointer to the next element
+      int size = left->get_type()->get_data_size_of_type() + 8; 
       llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
       llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
-      llvm::Value *h = Builder.CreateGEP(n, {c32(0), c32(0)}, "headptr");
+      llvm::Value *h = Builder.CreateStructGEP(n, 0, "headptr");
       Builder.CreateStore(l, h);          
-      std::cout << "Everything ok under createStore\n";
-      llvm::Value *t = Builder.CreateGEP(n, {c32(0), c32(1)}, "tailptr");
-      std::cout << "Everything ok under GEP\n";
+      llvm::Value *t = Builder.CreateStructGEP(n, 1, "tailptr");
       Builder.CreateStore(r, t);
-      std::cout << "Everything ok under 2nd createStore\n";
       return n;
-      //return Builder.CreatePtrToInt(n, i64, "listptr");
     }
     else                    yyerror("Operation not supported yet");
     return nullptr;
-    
   }
 private:
   Expr *left;
@@ -670,6 +666,7 @@ public:
       type = new TonyType(TYPE_bool, nullptr); 
     }
   }
+
   // TODO: Add logic for lists
   virtual llvm::Value *compile() override {
     llvm::Value *r = right->compile();
@@ -678,26 +675,15 @@ public:
     if (op == "-")     return Builder.CreateNeg(r);
     if (op == "not")   return Builder.CreateNot(r);
     if (op == "head") {
-      std::cout << "hey previous\n";
       // We want to get a pointer to the head, so we must typecast.
 			r = Builder.CreateBitCast(
-        r,
-        getOrCreateLLVMTypeFromTonyType(right->get_type()));
-      std::cout << "hey\n";
+        r, getOrCreateLLVMTypeFromTonyType(right->get_type()));
 			
       // We get a pointer to the value of the head.
       r = Builder.CreateStructGEP(r, 0);
-      std::cout << "hey!\n";
 
       // We load the value.
 			r = Builder.CreateLoad(r);
-      // NOTE: I don't think another CreateBitCast is needed.
-			// r = Builder.CreateBitCast(
-      //   r, 
-      //   getOrCreateLLVMTypeFromTonyType(right->get_type()->get_nested_type())
-      // );
-      std::cout << "hey!!\n";
-
       return r;
     }
     if (op == "tail")  return nullptr;
@@ -748,7 +734,6 @@ public:
   // This is called when defining variables
   virtual llvm::Value *compile() override {
     llvm::Type* t = getOrCreateLLVMTypeFromTonyType(type);
-    // std::cout << "Everything ok under getOrCreate\n";
     for (Id * id: ids) {
       llvm::AllocaInst* Alloca = Builder.CreateAlloca(t, 0, id->getName());
       // TODO: Why do we add Alloca twice?
@@ -1111,7 +1096,6 @@ public:
      */
     expr->setLLVMType(LLVMType);
     llvm::Value * Val = expr->compile();
-    std::cout << "Everything ok under whole expression compiles\n";
     if(!atom->isLvalue()){
       yyerror("Atom is not a valid l-value.");
     }
