@@ -1084,25 +1084,20 @@ public:
     }
   }
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value* compile() override {
     llvm::Type* LLVMType = rt.lookup(atom->getName())->varType;
-    /*
-     * We pass the LLVMType of the variable to the `expr`.
-     * We do this because of complex types (e.g. list [char]).
-     * We must construct and declare these types in LLVM by hand.
-     * And we must do this only once, when the variables are declared.
-     * Now the `expr` knows its type and won't have to construct it
-     * from scratch during 'compile'.
-     */
-    expr->setLLVMType(LLVMType);
-    llvm::Value * Val = expr->compile();
+
+    if (is_nil_constant(expr->get_type())) {
+      // `nil` expressions need to know their type during their 'compile'.
+      expr->setLLVMType(LLVMType);
+    }
+    llvm::Value* value = expr->compile();
+
     if(!atom->isLvalue()){
       yyerror("Atom is not a valid l-value.");
     }
-
-    llvm::Value *Variable = rt.lookup(atom->getName())->varValue;
-    Builder.CreateStore(Val, Variable);
-    return Val;
+    llvm::Value *variable = rt.lookup(atom->getName())->varValue;
+    return nullptr;
   } 
 private:
   Atom *atom;
