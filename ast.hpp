@@ -323,12 +323,10 @@ public:
 
   // Not implemented yet
   virtual llvm::Value *compile() override {
-    llvm::Value *V = rt.lookup(var)->varValue;
-    llvm::Type *t = rt.lookup(var)->varType;
-    LLVMType = t;
-    if(!V)
+    llvm::Value *v = rt.lookup(var)->varValue;
+    if(!v)
       yyerror("Variable not Found");
-    return Builder.CreateLoad(V, var.c_str());
+    return Builder.CreateLoad(v, var.c_str());
   } 
 
   virtual bool isLvalue() override{
@@ -731,13 +729,13 @@ public:
     for (Id * i : ids) {i->set_type(type); i->insertIntoScope(T_VAR);}
   }
 
-  // This is called when defining variables
   virtual llvm::Value *compile() override {
     llvm::Type* t = getOrCreateLLVMTypeFromTonyType(type);
     for (Id * id: ids) {
-      llvm::AllocaInst* Alloca = Builder.CreateAlloca(t, 0, id->getName());
-      // TODO: Why do we add Alloca twice?
-      rt.insertVar(id->getName(), t, Alloca, Alloca);
+      llvm::AllocaInst* alloca = Builder.CreateAlloca(t, 0, id->getName());
+
+      // QUESTION: Why do we add alloca twice?
+      rt.insertVar(id->getName(), t, alloca, alloca);
     }
     return nullptr;
   } 
@@ -1097,6 +1095,7 @@ public:
       yyerror("Atom is not a valid l-value.");
     }
     llvm::Value *variable = rt.lookup(atom->getName())->varValue;
+    Builder.CreateStore(value, variable);
     return nullptr;
   } 
 private:
