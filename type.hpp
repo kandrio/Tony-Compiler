@@ -36,6 +36,19 @@ public:
       size = n;
     }
 
+    // TODO: Implement this for all types
+    int get_data_size_of_type() {
+      /* Return the size (in Bytes) of an object that has this type. */
+      switch(current_type) {
+        case TYPE_int: return 4;
+        case TYPE_char: return 1;
+        case TYPE_bool: return 1;
+        case TYPE_array: return size*(nested_type->get_data_size_of_type());
+        case TYPE_list: return 8;
+        default: return 0;
+      }
+    }
+
     std::vector<TonyType *> get_function_args (){
       return function_args;
     }

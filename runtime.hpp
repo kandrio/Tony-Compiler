@@ -5,6 +5,25 @@
 #include <llvm/IR/Value.h>
 #include "llvm/IR/Instructions.h"
 
+class LLVMListTypes {
+public:
+    LLVMListTypes() {}
+    ~LLVMListTypes () {}
+    llvm::Type* lookup(std::string hash) {
+        if (list_map.find(hash) == list_map.end()) return nullptr;
+        return list_map[hash];
+    }
+
+    void insert(std::string hash, llvm::Type* t){
+        if (list_map.find(hash) != list_map.end()) {
+            yyerror("List type: %s already defined", hash.c_str());
+        }
+        list_map[hash] = t;
+    }
+private:
+    std::map<std::string, llvm::Type*> list_map;
+};
+
 struct ValueEntry {
     llvm::Type       * varType;
     llvm::Value      * varValue;
@@ -91,8 +110,6 @@ private:
 };
 
 extern RuntimeTable rt;
-
-
-
+extern LLVMListTypes llvm_list_types;
 
 #endif

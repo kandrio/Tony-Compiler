@@ -193,6 +193,18 @@ protected:
     }
   }
 
+  static std::string createHashKeyForType(TonyType *t) {
+    switch(t->get_current_type()) {
+      case TYPE_int: return std::string("int");
+      case TYPE_bool: return std::string("bool");
+      case TYPE_char: return std::string("char");
+      case TYPE_list: {
+        return std::string("list_") + createHashKeyForType(t->get_nested_type());
+      }
+      default: yyerror("Cannot have that type in a list.");
+    }
+  }
+
   static llvm::Type* getOrCreateLLVMTypeFromTonyType(TonyType *t) {
     switch(t->get_current_type()) {
       case TYPE_int: return i32;
@@ -200,10 +212,15 @@ protected:
       case TYPE_char: return i8;
       case TYPE_void: return voidT;
       case TYPE_list: {
-        llvm::StructType* NodeType = llvm::StructType::create(TheContext, "nodetype");
-        llvm::PointerType* p = llvm::PointerType::get(NodeType, 0);
-        NodeType->setBody({getOrCreateLLVMTypeFromTonyType(t->get_nested_type()), p});
-        return p;
+        std::string hash = createHashKeyForType(t);
+        llvm::Type* type = llvm_list_types.lookup(hash);
+        if (type == nullptr) {
+          llvm::StructType* NodeType = llvm::StructType::create(TheContext, "nodetype");
+          llvm::PointerType* p = llvm::PointerType::get(NodeType, 0);
+          NodeType->setBody({getOrCreateLLVMTypeFromTonyType(t->get_nested_type()), p});
+          llvm_list_types.insert(hash, p);
+        }        
+        return llvm_list_types.lookup(hash);
       }
 
       default: yyerror("Type conversion not implemented yet");
@@ -244,8 +261,12 @@ public:
     */
     return type;
   }
-  void setLLVMType(llvm::Type* t){
+  void setLLVMType(llvm::Type* t) {
     LLVMType = t;
+  }
+
+  llvm::Type* getLLVMType() {
+    return LLVMType;
   }
 protected:
   TonyType* type;
@@ -302,6 +323,8 @@ public:
   // Not implemented yet
   virtual llvm::Value *compile() override {
     llvm::Value *V = rt.lookup(var)->varValue;
+    llvm::Type *t = rt.lookup(var)->varType;
+    LLVMType = t;
     if(!V)
       yyerror("Variable not Found");
     return Builder.CreateLoad(V, var.c_str());
@@ -458,13 +481,14 @@ public:
 
   // Not implemented yet
   virtual llvm::Value *compile() override {
-    //TODO: Calculate size for all types.
-    int size = 8 + 1;
-    llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
+    /*
+    llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(16)}, "newtmp");
     llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
     llvm::Value *h = Builder.CreateGEP(n, {c32(0), c32(0)}, "headptr");
-    Builder.CreateStore(c8(0), h);          
-    return n;
+    Builder.CreateStore(c8(0), h); 
+    return n;         
+    */
+    return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(LLVMType));    
   }
 };
 
@@ -540,7 +564,8 @@ public:
 
   virtual llvm::Value *compile() override{
     llvm::Value *l = left->compile();
-    std::cout << "Everything ok under left->compilie()\n";      
+    std::cout << "Everything ok under left->compilie()\n";
+    LLVMType = getOrCreateLLVMTypeFromTonyType(type);
     right->setLLVMType(LLVMType);
     llvm::Value *r = right->compile();
     std::cout << "Everything ok under right->compilie()\n";
@@ -560,7 +585,7 @@ public:
     else if(op ==  "or")    return Builder.CreateOr(l,r, "ortmp");
     else if(op ==  "#") {
       //TODO: Calculate size for all types.
-      int size = 8 + 1;
+      int size = 8 + left->get_type()->get_data_size_of_type();
       llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
       llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
       llvm::Value *h = Builder.CreateGEP(n, {c32(0), c32(0)}, "headptr");
@@ -649,7 +674,29 @@ public:
     if (op == "+")     return r;
     if (op == "-")     return Builder.CreateNeg(r);
     if (op == "not")   return Builder.CreateNot(r);
-    if (op == "head")  return nullptr;
+    if (op == "head") {
+      std::cout << "hey previous\n";
+      // We want to get a pointer to the head, so we must typecast.
+			r = Builder.CreateBitCast(
+        r,
+        getOrCreateLLVMTypeFromTonyType(right->get_type()));
+      std::cout << "hey\n";
+			
+      // We get a pointer to the value of the head.
+      r = Builder.CreateStructGEP(r, 0);
+      std::cout << "hey!\n";
+
+      // We load the value.
+			r = Builder.CreateLoad(r);
+      // NOTE: I don't think another CreateBitCast is needed.
+			// r = Builder.CreateBitCast(
+      //   r, 
+      //   getOrCreateLLVMTypeFromTonyType(right->get_type()->get_nested_type())
+      // );
+      std::cout << "hey!!\n";
+
+      return r;
+    }
     if (op == "tail")  return nullptr;
     if (op == "nil?")  return nullptr;
     return nullptr;
@@ -698,7 +745,7 @@ public:
   // This is called when defining variables
   virtual llvm::Value *compile() override {
     llvm::Type* t = getOrCreateLLVMTypeFromTonyType(type);
-    std::cout << "Everything ok under getOrCreate\n";
+    // std::cout << "Everything ok under getOrCreate\n";
     for (Id * id: ids) {
       llvm::AllocaInst* Alloca = Builder.CreateAlloca(t, 0, id->getName());
       // TODO: Why do we add Alloca twice?
