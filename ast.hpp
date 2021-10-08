@@ -64,8 +64,7 @@ public:
     i64 = llvm::IntegerType::get(TheContext, 64);
     voidT = llvm::Type::getVoidTy(TheContext);
 
-    // Initialize library functions
-    // We use 'TheMalloc' to allocate memory blocks with LLVM.
+    // We'll use 'TheMalloc' to allocate memory blocks with LLVM.
     // This is needed currently for creating Tony lists.
     llvm::FunctionType *malloc_type = 
       llvm::FunctionType::get(llvm::PointerType::get(i8, 0),
@@ -73,8 +72,6 @@ public:
     TheMalloc = 
       llvm::Function::Create(malloc_type, llvm::Function::ExternalLinkage,
                              "GC_malloc", TheModule.get());
-
-
     
     // Global Scope
     rt.openScope();
@@ -193,18 +190,13 @@ protected:
     }
   }
 
-  static std::string createHashKeyForType(TonyType *t) {
-    switch(t->get_current_type()) {
-      case TYPE_int: return std::string("int");
-      case TYPE_bool: return std::string("bool");
-      case TYPE_char: return std::string("char");
-      case TYPE_list: {
-        return std::string("list_") + createHashKeyForType(t->get_nested_type());
-      }
-      default: yyerror("Cannot have that type in a list.");
-    }
-  }
-
+  /*
+   * This function creates a pointer to the LLVM type that corresponds
+   * to a TonyType. For the case of simple expressions, like integers,
+   * LLVM already provides types (e.g. `i32`).
+   * BUT for the case of more complex structures, like lists, we
+   * must construct the corresponding LLVM type.
+   */
   static llvm::Type* getOrCreateLLVMTypeFromTonyType(TonyType *t) {
     switch(t->get_current_type()) {
       case TYPE_int: return i32;
@@ -212,19 +204,30 @@ protected:
       case TYPE_char: return i8;
       case TYPE_void: return voidT;
       case TYPE_list: {
-        std::string hash = createHashKeyForType(t);
-        llvm::Type* type = llvm_list_types.lookup(hash);
-        if (type == nullptr) {
-          llvm::StructType* NodeType = llvm::StructType::create(TheContext, "nodetype");
-          llvm::PointerType* p = llvm::PointerType::get(NodeType, 0);
-          NodeType->setBody({getOrCreateLLVMTypeFromTonyType(t->get_nested_type()), p});
-          llvm_list_types.insert(hash, p);
-        }        
-        return llvm_list_types.lookup(hash);
-      }
+        std::string hash = t->createHashKeyForType();
+        llvm::Type* list_type = llvm_list_types.lookup(hash);
 
+        // In this case, we haven't created a type for such a list yet.
+        // So, we will create it and insert it in `llvm_list_types`.        
+        if (list_type == nullptr) {
+          llvm::StructType* node_type = llvm::StructType::create(TheContext, "nodetype");
+          llvm::PointerType* pointer_to_node_type = llvm::PointerType::get(node_type, 0);
+
+          // The value of a node can be a list too. So, we must construct its type
+          // first by calling `getOrCreateLLVMTypeFromTonyType` recursively.
+          llvm::Type* node_value_type = 
+            getOrCreateLLVMTypeFromTonyType(t->get_nested_type());
+          
+          // A list node has type `node_type` and consists of:
+          // - a value of type `node_value_type`
+          // - a pointer to a list node of type `pointer_to_node_type`
+          node_type->setBody({node_value_type, pointer_to_node_type});
+          llvm_list_types.insert(hash, pointer_to_node_type);
+          list_type = pointer_to_node_type;
+        }
+        return list_type;
+      }
       default: yyerror("Type conversion not implemented yet");
-      return nullptr;
     }
   }
 
@@ -974,11 +977,13 @@ public:
 
     std::vector<llvm::Type *> ArgumentTypes;
     for (auto i: args){
-      ArgumentTypes.push_back(convertType(i));
+      ArgumentTypes.push_back(getOrCreateLLVMTypeFromTonyType(i));
     }
-    llvm::FunctionType *FT = llvm::FunctionType::get(convertType(type), ArgumentTypes, false);
-    llvm::Function *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, 
-      name, TheModule.get());
+    llvm::FunctionType *FT =
+      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(type),
+                              ArgumentTypes, false);
+    llvm::Function *F = llvm::Function::Create(FT,
+      llvm::Function::ExternalLinkage, name, TheModule.get());
     
     unsigned i = 0;
     for (auto &Arg: F->args()) Arg.setName(names[i++]);

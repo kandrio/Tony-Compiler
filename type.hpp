@@ -49,6 +49,24 @@ public:
       }
     }
 
+    /*
+     * Types have their own hash string key so that they can be found in the
+     * `llvm_list_types` catalog (if they are created first).
+     * 
+     * Example: list [list [char]] : "list_list_char"
+     */
+    std::string createHashKeyForType() {
+      switch(get_current_type()) {
+        case TYPE_int: return std::string("int");
+        case TYPE_bool: return std::string("bool");
+        case TYPE_char: return std::string("char");
+        case TYPE_list: {
+          return std::string("list_") + nested_type->createHashKeyForType();
+        }
+        default: yyerror("Cannot have that type in a list.");
+      }
+    }
+
     std::vector<TonyType *> get_function_args (){
       return function_args;
     }
