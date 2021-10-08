@@ -64,8 +64,7 @@ public:
     i64 = llvm::IntegerType::get(TheContext, 64);
     voidT = llvm::Type::getVoidTy(TheContext);
 
-    // Initialize library functions
-    // We use 'TheMalloc' to allocate memory blocks with LLVM.
+    // We'll use 'TheMalloc' to allocate memory blocks with LLVM.
     // This is needed currently for creating Tony lists.
     llvm::FunctionType *malloc_type = 
       llvm::FunctionType::get(llvm::PointerType::get(i8, 0),
@@ -73,8 +72,6 @@ public:
     TheMalloc = 
       llvm::Function::Create(malloc_type, llvm::Function::ExternalLinkage,
                              "GC_malloc", TheModule.get());
-
-
     
     // Global Scope
     rt.openScope();
@@ -193,6 +190,47 @@ protected:
     }
   }
 
+  /*
+   * This function creates a pointer to the LLVM type that corresponds
+   * to a TonyType. For the case of simple expressions, like integers,
+   * LLVM already provides types (e.g. `i32`).
+   * BUT for the case of more complex structures, like lists, we
+   * must construct the corresponding LLVM type.
+   */
+  static llvm::Type* getOrCreateLLVMTypeFromTonyType(TonyType *t) {
+    switch(t->get_current_type()) {
+      case TYPE_int: return i32;
+      case TYPE_bool: return i1;
+      case TYPE_char: return i8;
+      case TYPE_void: return voidT;
+      case TYPE_list: {
+        std::string hash = t->createHashKeyForType();
+        llvm::Type* list_type = llvm_list_types.lookup(hash);
+
+        // In this case, we haven't created a type for such a list yet.
+        // So, we will create it and insert it in `llvm_list_types`.        
+        if (list_type == nullptr) {
+          llvm::StructType* node_type = llvm::StructType::create(TheContext, "nodetype");
+          llvm::PointerType* pointer_to_node_type = llvm::PointerType::get(node_type, 0);
+
+          // The value of a node can be a list too. So, we must construct its type
+          // first by calling `getOrCreateLLVMTypeFromTonyType` recursively.
+          llvm::Type* node_value_type = 
+            getOrCreateLLVMTypeFromTonyType(t->get_nested_type());
+          
+          // A list node has type `node_type` and consists of:
+          // - a value of type `node_value_type`
+          // - a pointer to a list node of type `pointer_to_node_type`
+          node_type->setBody({node_value_type, pointer_to_node_type});
+          llvm_list_types.insert(hash, pointer_to_node_type);
+          list_type = pointer_to_node_type;
+        }
+        return list_type;
+      }
+      default: yyerror("Type conversion not implemented yet");
+    }
+  }
+
   static llvm::AllocaInst *CreateEntryBlockAlloca (llvm::Function *TheFunction, const std::string &VarName, llvm::Type* Ty){
     llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
     return TmpB.CreateAlloca(Ty, 0, VarName.c_str());
@@ -226,8 +264,14 @@ public:
     */
     return type;
   }
+
+  void setLLVMType(llvm::Type* t) {
+    LLVMType = t;
+  }
+
 protected:
   TonyType* type;
+  llvm::Type* LLVMType;
 };
 
 class Stmt: public AST {
@@ -279,10 +323,10 @@ public:
 
   // Not implemented yet
   virtual llvm::Value *compile() override {
-    llvm::Value *V = rt.lookup(var)->varValue;
-    if(!V)
+    llvm::Value *v = rt.lookup(var)->varValue;
+    if(!v)
       yyerror("Variable not Found");
-    return Builder.CreateLoad(V, var.c_str());
+    return Builder.CreateLoad(v, var.c_str());
   } 
 
   virtual bool isLvalue() override{
@@ -421,7 +465,7 @@ private:
 
 /*
  *  This is a constant value (check Tony language description).
-    It is equal to an empty list and has type: list[t], where `t` can be any type.
+ *  It is equal to an empty list and has type: list[t], where `t` can be any type.
  */
 class Nil: public Expr {
 public:
@@ -434,10 +478,9 @@ public:
     type = new TonyType(TYPE_list, new TonyType(TYPE_any, nullptr));
   }
 
-  // Not implemented yet
   virtual llvm::Value *compile() override {
-    return nullptr;
-  } 
+    return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(LLVMType));    
+  }
 };
 
 class Boolean: public Expr {
@@ -512,6 +555,20 @@ public:
 
   virtual llvm::Value *compile() override{
     llvm::Value *l = left->compile();
+
+    if (op == "#") {
+
+      // We construct the 'complex' LLVM type for the list.
+      LLVMType = getOrCreateLLVMTypeFromTonyType(type);
+
+      if (is_nil_constant(right->get_type())) {
+        // `nil` can't know the type of the list that it's used in,
+        // so we must pass it explicitly in order to construct a null
+        // LLVM pointer of the same type (in `compile`).
+        right->setLLVMType(LLVMType);
+      }
+    }
+
     llvm::Value *r = right->compile();
     
     if(op ==  "+")          return Builder.CreateAdd(l, r, "addtmp");
@@ -528,14 +585,19 @@ public:
     else if(op ==  "and")   return Builder.CreateAnd(l,r, "andtmp");
     else if(op ==  "or")    return Builder.CreateOr(l,r, "ortmp");
     else if(op ==  "#") {
-      //Allocate memory for head::(value, next)
-      //Store value in head::value
-      //Store address of right in head::next
-      //Return LLVM::Value for the whole list
+
+      // 8 bytes are used for the pointer to the next element
+      int size = left->get_type()->get_data_size_of_type() + 8; 
+      llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
+      llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
+      llvm::Value *h = Builder.CreateStructGEP(n, 0, "headptr");
+      Builder.CreateStore(l, h);          
+      llvm::Value *t = Builder.CreateStructGEP(n, 1, "tailptr");
+      Builder.CreateStore(r, t);
+      return n;
     }
     else                    yyerror("Operation not supported yet");
     return nullptr;
-    
   }
 private:
   Expr *left;
@@ -602,6 +664,7 @@ public:
       type = new TonyType(TYPE_bool, nullptr); 
     }
   }
+
   // TODO: Add logic for lists
   virtual llvm::Value *compile() override {
     llvm::Value *r = right->compile();
@@ -609,7 +672,18 @@ public:
     if (op == "+")     return r;
     if (op == "-")     return Builder.CreateNeg(r);
     if (op == "not")   return Builder.CreateNot(r);
-    if (op == "head")  return nullptr;
+    if (op == "head") {
+      // We want to get a pointer to the head, so we must typecast.
+			r = Builder.CreateBitCast(
+        r, getOrCreateLLVMTypeFromTonyType(right->get_type()));
+			
+      // We get a pointer to the value of the head.
+      r = Builder.CreateStructGEP(r, 0);
+
+      // We load the value.
+			r = Builder.CreateLoad(r);
+      return r;
+    }
     if (op == "tail")  return nullptr;
     if (op == "nil?")  return nullptr;
     return nullptr;
@@ -655,16 +729,16 @@ public:
     for (Id * i : ids) {i->set_type(type); i->insertIntoScope(T_VAR);}
   }
 
-  // This is called when defining variables
   virtual llvm::Value *compile() override {
-    for (Id * id: ids){
-      llvm::AllocaInst * Alloca = Builder.CreateAlloca(convertType(type), 0, id->getName());
-      rt.insertVar(id->getName(), convertType(type), Alloca, Alloca);
+    llvm::Type* t = getOrCreateLLVMTypeFromTonyType(type);
+    for (Id * id: ids) {
+      llvm::AllocaInst* alloca = Builder.CreateAlloca(t, 0, id->getName());
+
+      // QUESTION: Why do we add alloca twice?
+      rt.insertVar(id->getName(), t, alloca, alloca);
     }
     return nullptr;
   } 
-
-
 
   std::pair<TonyType*, int> getArgs(){
     std::pair<TonyType*, int> p1;
@@ -886,11 +960,13 @@ public:
 
     std::vector<llvm::Type *> ArgumentTypes;
     for (auto i: args){
-      ArgumentTypes.push_back(convertType(i));
+      ArgumentTypes.push_back(getOrCreateLLVMTypeFromTonyType(i));
     }
-    llvm::FunctionType *FT = llvm::FunctionType::get(convertType(type), ArgumentTypes, false);
-    llvm::Function *F = llvm::Function::Create(FT, llvm::Function::ExternalLinkage, 
-      name, TheModule.get());
+    llvm::FunctionType *FT =
+      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(type),
+                              ArgumentTypes, false);
+    llvm::Function *F = llvm::Function::Create(FT,
+      llvm::Function::ExternalLinkage, name, TheModule.get());
     
     unsigned i = 0;
     for (auto &Arg: F->args()) Arg.setName(names[i++]);
@@ -1005,16 +1081,22 @@ public:
       yyerror("Atom is not a valid l-value.");
     }
   }
-  // Not implemented yet
-  virtual llvm::Value *compile() override {
-    llvm::Value * Val = expr->compile();
+
+  virtual llvm::Value* compile() override {
+    llvm::Type* LLVMType = rt.lookup(atom->getName())->varType;
+
+    if (is_nil_constant(expr->get_type())) {
+      // `nil` expressions need to know their type during their 'compile'.
+      expr->setLLVMType(LLVMType);
+    }
+    llvm::Value* value = expr->compile();
+
     if(!atom->isLvalue()){
       yyerror("Atom is not a valid l-value.");
     }
-
-    llvm::Value *Variable = rt.lookup(atom->getName())->varValue;
-    Builder.CreateStore(Val, Variable);
-    return Val;
+    llvm::Value *variable = rt.lookup(atom->getName())->varValue;
+    Builder.CreateStore(value, variable);
+    return nullptr;
   } 
 private:
   Atom *atom;

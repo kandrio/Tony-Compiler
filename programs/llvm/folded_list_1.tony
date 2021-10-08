@@ -1,0 +1,6 @@
+def main():
+    list [list [char]] x
+    x := ('2' # nil) # ('1' # nil) # nil
+    putc(head(head(x)))
+    putc(head(head(head(('z' # nil) # nil) # (('x' # nil) # nil))))
+end

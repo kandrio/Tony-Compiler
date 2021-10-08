@@ -1,9 +1,4 @@
 def main():
-    int x, y
-    char z
-    bool b
-    
-    z := 'a'
-    
-    putc (chr (97))
+    list [char] x
+    x := 'c' # nil
 end

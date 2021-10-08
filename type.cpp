@@ -36,11 +36,9 @@ bool check_type_equality(TonyType* type1, TonyType* type2) {
 
 bool is_nil_constant(TonyType *type) {
     if (type->get_current_type() != TYPE_list) {
-        std::cout << "ATTENTION: You didn't provide a list.\n";
         return false;
     }
     if (type->get_nested_type() == nullptr) {
-        std::cout << "ATTENTION: The list didn't have a nested type! (this shouldn't have happened)\n";
         return false;
     }
     if (type->get_nested_type()->get_current_type() == TYPE_any) {
