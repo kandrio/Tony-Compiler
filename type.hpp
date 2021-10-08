@@ -36,6 +36,37 @@ public:
       size = n;
     }
 
+    // TODO: Implement this for all types
+    int get_data_size_of_type() {
+      /* Return the size (in Bytes) of an object that has this type. */
+      switch(current_type) {
+        case TYPE_int: return 4;
+        case TYPE_char: return 1;
+        case TYPE_bool: return 1;
+        case TYPE_array: return size*(nested_type->get_data_size_of_type());
+        case TYPE_list: return 8;
+        default: return 0;
+      }
+    }
+
+    /*
+     * Types have their own hash string key so that they can be found in the
+     * `llvm_list_types` catalog (if they are created first).
+     * 
+     * Example: list [list [char]] : "list_list_char"
+     */
+    std::string createHashKeyForType() {
+      switch(get_current_type()) {
+        case TYPE_int: return std::string("int");
+        case TYPE_bool: return std::string("bool");
+        case TYPE_char: return std::string("char");
+        case TYPE_list: {
+          return std::string("list_") + nested_type->createHashKeyForType();
+        }
+        default: yyerror("Cannot have that type in a list.");
+      }
+    }
+
     std::vector<TonyType *> get_function_args (){
       return function_args;
     }
