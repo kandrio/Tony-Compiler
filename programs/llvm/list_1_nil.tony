@@ -1,0 +1,38 @@
+def main():
+
+  list[list[list[int]]] y
+
+  if nil?(nil # nil # nil):
+    putc('a')
+  end
+  if not nil?(head(nil # nil # nil)):
+    putc('b')
+  end
+  if not nil?(tail(nil # nil)):
+    putc('c')
+  end
+  if nil?(tail(nil # nil # nil)):
+    putc('d')
+  end
+
+  y := (head(head((42 # nil) # nil) # nil) # tail(nil # nil)) # nil
+  y := (nil # nil) # nil
+  if nil?(head(y)):
+    putc('e')
+  end
+  if not nil?(head(head(y))):
+    putc('f')
+  end
+
+  if not nil?(tail(5 # nil)):
+    putc('g')
+  end
+
+  if not nil?(tail(nil # nil)):
+    putc('h')
+  end
+
+  % This program should print this only.
+  putc('i')
+
+end

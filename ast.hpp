@@ -202,6 +202,7 @@ protected:
       case TYPE_int: return i32;
       case TYPE_bool: return i1;
       case TYPE_char: return i8;
+      case TYPE_any: return i32;
       case TYPE_void: return voidT;
       case TYPE_list: {
         std::string hash = t->createHashKeyForType();
@@ -480,7 +481,7 @@ public:
   }
 
   virtual llvm::Value *compile() override {
-    return llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(LLVMType));    
+    return llvm::ConstantPointerNull::get(llvm::Type::getInt32Ty(TheContext)->getPointerTo());
   }
 };
 
@@ -498,7 +499,6 @@ public:
     type = new TonyType(TYPE_bool, nullptr);
   }
 
-  // Not implemented yet
   virtual llvm::Value *compile() override {
     return c1(b);
   } 
@@ -556,20 +556,6 @@ public:
 
   virtual llvm::Value *compile() override{
     llvm::Value *l = left->compile();
-
-    if (op == "#") {
-
-      // We construct the 'complex' LLVM type for the list.
-      LLVMType = getOrCreateLLVMTypeFromTonyType(type);
-
-      if (is_nil_constant(right->get_type())) {
-        // `nil` can't know the type of the list that it's used in,
-        // so we must pass it explicitly in order to construct a null
-        // LLVM pointer of the same type (in `compile`).
-        right->setLLVMType(LLVMType);
-      }
-    }
-
     llvm::Value *r = right->compile();
     
     if(op ==  "+")          return Builder.CreateAdd(l, r, "addtmp");
@@ -587,13 +573,19 @@ public:
     else if(op ==  "or")    return Builder.CreateOr(l,r, "ortmp");
     else if(op ==  "#") {
 
+      LLVMType = getOrCreateLLVMTypeFromTonyType(type);
+      llvm::Type* LLVMTypeOfElement =
+        getOrCreateLLVMTypeFromTonyType(type->get_nested_type());
+
       // 8 bytes are used for the pointer to the next element
-      int size = left->get_type()->get_data_size_of_type() + 8; 
+      int size = left->get_type()->get_data_size_of_type() + 8;
       llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
       llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
       llvm::Value *h = Builder.CreateStructGEP(n, 0, "headptr");
-      Builder.CreateStore(l, h);          
+      l = Builder.CreateBitCast(l, LLVMTypeOfElement);
+      Builder.CreateStore(l, h);
       llvm::Value *t = Builder.CreateStructGEP(n, 1, "tailptr");
+      r = Builder.CreateBitCast(r, LLVMType);
       Builder.CreateStore(r, t);
       return n;
     }
@@ -686,18 +678,22 @@ public:
       return r;
     }
     if (op == "tail") {
+
       // We want to get a pointer to the head, so we must typecast.
 			r = Builder.CreateBitCast(
         r, getOrCreateLLVMTypeFromTonyType(right->get_type()));
 			
-      // We get a pointer to the value of the head.
+      // We get a pointer to the tail.
       r = Builder.CreateStructGEP(r, 1);
 
       // We load the value.
 			r = Builder.CreateLoad(r);
       return r;
     }
-    if (op == "nil?")  return nullptr;
+    if (op == "nil?") {
+      llvm::Value *nil_type = llvm::ConstantPointerNull::get(static_cast<llvm::PointerType *>(r->getType()));
+			return Builder.CreateICmpEQ(r, nil_type);
+    }
     return nullptr;
   } 
 private:
@@ -1107,6 +1103,7 @@ public:
       yyerror("Atom is not a valid l-value.");
     }
     llvm::Value *variable = rt.lookup(atom->getName())->varValue;
+    value = Builder.CreateBitCast(value, LLVMType);
     Builder.CreateStore(value, variable);
     return nullptr;
   } 

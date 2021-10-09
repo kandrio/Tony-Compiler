@@ -45,6 +45,7 @@ public:
         case TYPE_bool: return 1;
         case TYPE_array: return size*(nested_type->get_data_size_of_type());
         case TYPE_list: return 8;
+        case TYPE_any: return 4;
         default: return 0;
       }
     }
@@ -60,6 +61,7 @@ public:
         case TYPE_int: return std::string("int");
         case TYPE_bool: return std::string("bool");
         case TYPE_char: return std::string("char");
+        case TYPE_any: return std::string("int");
         case TYPE_list: {
           return std::string("list_") + nested_type->createHashKeyForType();
         }
