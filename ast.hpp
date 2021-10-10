@@ -284,6 +284,12 @@ class Atom: public Expr {
 public:
   virtual bool isLvalue() {return false;}
   virtual std::string getName() = 0;
+  virtual bool isArrayElement() {return false;}
+  virtual void setPassValue(bool b) {
+    pass_value=b;
+  }
+protected:
+  bool pass_value;
 };
 
 class Simple: public Stmt {  
@@ -340,8 +346,11 @@ private:
 
 class ArrayElement: public Atom {
 public:
-  ArrayElement(Atom *a, Expr *e): atom(a), expr(e) {}
+  ArrayElement(Atom *a, Expr *e): atom(a), expr(e) {
+    pass_value=true;
+  }
   ~ArrayElement() {delete atom; delete expr;}
+  bool isArrayElement() override {return true;}
   virtual void printOn(std::ostream &out) const override {
     out << "\n<ArrayElement>\n" << *atom << "\n" << *expr << "\n</ArrayElement>\n";
   }
@@ -366,17 +375,20 @@ public:
     return atom->getName();
   }
 
+  void setPassValue(bool b) override {
+    pass_value=b;
+  }
+
   virtual llvm::Value *compile() override {
     llvm::Value* array_index = expr->compile();
     llvm::Value* variable = rt.lookup(getName())->varValue;
     if(!variable) yyerror("Variable not Found");
-    llvm::Type*  LLVMType = rt.lookup(getName())->varType;
     llvm::Value* array_address =
       Builder.CreateLoad(variable, getName().c_str());
-    array_address =
-      Builder.CreateBitCast(array_address, LLVMType, "array");
     llvm::Value* elem_ptr = Builder.CreateGEP(array_address, array_index);
-    //return Builder.CreateLoad(elem_ptr, "elem");
+    if (pass_value) {
+      return Builder.CreateLoad(elem_ptr, "elem");
+    }
     return elem_ptr;
   } 
 private:
@@ -468,7 +480,8 @@ public:
   virtual llvm::Value *compile() override {
     llvm::Value* e = expr->compile();
     llvm::Value* size =
-      Builder.CreateMul(e, c32(type_of_elems->get_data_size_of_type()), "size");
+      Builder.CreateMul(e, c32(type_of_elems->get_data_size_of_type()),
+                        "sizeformalloc");
     llvm::Value* p =
       Builder.CreateCall(TheMalloc, {size}, "arrayaddr");
     return p;
@@ -592,7 +605,7 @@ public:
 
       // 8 bytes are used for the pointer to the next element
       int size = left->get_type()->get_data_size_of_type() + 8;
-      llvm::Value *p = Builder.CreateCall(TheMalloc, {c64(size)}, "newtmp");
+      llvm::Value *p = Builder.CreateCall(TheMalloc, {c32(size)}, "newtmp");
       llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
       llvm::Value *h = Builder.CreateStructGEP(n, 0, "headptr");
       l = Builder.CreateBitCast(l, LLVMTypeOfElement);
@@ -1103,20 +1116,11 @@ public:
   }
 
   virtual llvm::Value* compile() override {
-    llvm::Type* LLVMType = rt.lookup(atom->getName())->varType;
-
-    // TODO: Check if this is needed. I think it isn't anymore.
-    if (is_nil_constant(expr->get_type())) {
-      // `nil` expressions need to know their type during their 'compile'.
-      expr->setLLVMType(LLVMType);
-    }
+    llvm::Type* LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
     llvm::Value* value = expr->compile();
-
-    if(!atom->isLvalue()) {
-      yyerror("Atom is not a valid l-value.");
-    }
-    llvm::Value *variable;
-    if (atom->get_type()->get_current_type() == xxxTYPE_array_element) {
+    llvm::Value* variable;
+    if (atom->isArrayElement()) {
+      atom->setPassValue(false);
       variable = atom->compile();
     } else {
       variable = rt.lookup(atom->getName())->varValue;
