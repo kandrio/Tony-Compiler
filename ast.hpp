@@ -406,7 +406,7 @@ public:
     if (pass_by_value) {
       
       // In this case, the ArrayElement is NOT used on the left side
-      // of an assignment.
+      // of an assignment, but on the right.
       return Builder.CreateLoad(elem_ptr, "elem");
     }
     return elem_ptr;
@@ -436,9 +436,19 @@ public:
     return strlit;
   }
 
-  // Not implemented yet
   virtual llvm::Value *compile() override {
-    return nullptr;
+    llvm::Value* p =
+      Builder.CreateCall(TheMalloc, c32(strlit.length()+1), "strlitaddr");
+    p = Builder.CreateBitCast(p, getOrCreateLLVMTypeFromTonyType(type));
+    llvm::Value* char_ptr;
+    for (std::string::size_type i = 0; i < strlit.length(); i++) {
+        char_ptr = Builder.CreateGEP(p, c32(i));
+        Builder.CreateStore(c8(strlit[i]), char_ptr);
+    }
+    char_ptr = Builder.CreateGEP(p, c32(strlit.length()));
+    Builder.CreateStore(c8('\0'), char_ptr);
+    std::cout << "Hello\n";
+    return p;
   } 
 private:
   std::string strlit;
