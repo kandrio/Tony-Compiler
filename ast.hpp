@@ -437,17 +437,42 @@ public:
   }
 
   virtual llvm::Value *compile() override {
+    int len = strlit.length();
+    std::string ret = strlit;
+    int i = 0;
+    int j = 0;
+    while(i < len-1) {
+      if(strlit[i] == '\\') {
+        switch(strlit[i+1]) {
+          case 'n':  ret[j] = '\n'; break;
+          case 't':  ret[j] = '\t'; break;
+          case 'r':  ret[j] = '\r'; break;
+          case '0':  ret[j] = '\0'; break;
+          case '\\': ret[j] = '\\'; break;
+          case '\'': ret[j] = '\''; break;
+          case '\"': ret[j] = '\"'; break;
+          case 'x':  ret[j] = (char)strtol((&strlit[i+2]), NULL, 16); break;
+        default:
+          yyerror("Couldn't get character in string literal...");
+        }
+        i+=2;
+      } else {
+        ret[j] = strlit[i];
+        i++;
+      }
+      j++;
+    }
+    ret = ret.substr(0, j);
     llvm::Value* p =
-      Builder.CreateCall(TheMalloc, c32(strlit.length()+1), "strlitaddr");
+      Builder.CreateCall(TheMalloc, c32(ret.length()+1), "strlitaddr");
     p = Builder.CreateBitCast(p, getOrCreateLLVMTypeFromTonyType(type));
     llvm::Value* char_ptr;
-    for (std::string::size_type i = 0; i < strlit.length(); i++) {
+    for (std::string::size_type i = 0; i < ret.length(); i++) {
         char_ptr = Builder.CreateGEP(p, c32(i));
-        Builder.CreateStore(c8(strlit[i]), char_ptr);
+        Builder.CreateStore(c8(ret[i]), char_ptr);
     }
-    char_ptr = Builder.CreateGEP(p, c32(strlit.length()));
+    char_ptr = Builder.CreateGEP(p, c32(ret.length()));
     Builder.CreateStore(c8('\0'), char_ptr);
-    std::cout << "Hello\n";
     return p;
   } 
 private:
