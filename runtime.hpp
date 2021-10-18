@@ -86,6 +86,7 @@ public:
         return values[name];
     }
 
+
     std::vector<std::string> getAllKeys(){
         std::vector<std::string> keys; 
         for(auto it = vars.begin(); it!= vars.end(); ++it){
@@ -169,7 +170,7 @@ static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBl
     }
     return newKeys;
 }
-
+/* 
 
  static llvm::Type *lookupVar(std::vector<RuntimeBlock *> blocks, std::string name){
     llvm::Type *t = nullptr;
@@ -187,7 +188,7 @@ static llvm::AllocaInst *lookupAddr(std::vector<RuntimeBlock *> blocks, std::str
         if (t!= nullptr) return t;
     }
     return nullptr;
-}
+} */
 
 static llvm::Value *lookupVal(std::vector<RuntimeBlock *> blocks, std::string name){
     llvm::Value *t= nullptr;

@@ -207,7 +207,7 @@ protected:
    * BUT for the case of more complex structures, like lists, we
    * must construct the corresponding LLVM type.
    */
-  static llvm::Type* getOrCreateLLVMTypeFromTonyType(TonyType *t) {
+  static llvm::Type* getOrCreateLLVMTypeFromTonyType(TonyType *t, PassMode mode = VAL) {
     
     //Initializing to avoid warning
     llvm::Type *retType = i32;
@@ -216,7 +216,7 @@ protected:
       case TYPE_bool: retType = i1;  break;
       case TYPE_char: retType = i8;  break;
       case TYPE_any:  retType = i32; break;
-      case TYPE_void: return voidT;  break;
+      case TYPE_void: retType = voidT;  break;
       case TYPE_list: {
         std::string hash = t->createHashKeyForType();
         llvm::Type* list_type = llvm_list_types.lookup(hash);
@@ -258,9 +258,14 @@ protected:
 
 
 
-    if(t->getPassMode() == REF)
+    if(mode == REF)
       retType = retType->getPointerTo();
     return retType;
+  }
+
+  // This should be simple, maybe more complex with lists or arrays
+  llvm::Type *getLLVMRefType(llvm::Type *orgType){
+    return orgType->getPointerTo();
   }
 
   static llvm::AllocaInst *CreateEntryBlockAlloca (llvm::Function *TheFunction, const std::string &VarName, llvm::Type* Ty){
@@ -1737,6 +1742,14 @@ public:
       blocks.back()->addArg(argNames[i], translated);
     }
 
+    //Getting previous scope vars, only gets strings which are not already included in function parameters
+    std::vector<std::string> previousVars = transferPrevBlockVariables(blocks);
+/*     for(auto it :previousVars){
+      llvm::Type * t = getLLVMRefType(blocks.back()->getVar(it));
+
+      blocks.back()->addArg(it, t);
+    } */
+
     // TODO: Here i should first check if func is declared
 
     llvm::FunctionType *FT =
@@ -1762,18 +1775,19 @@ public:
     // Insert Parameters
     for (auto &arg: Fun->args()) {
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
+      if(arg->isPointerTy())
+        blocks.back()->addAddr(std::string(arg.getName()), Alloca);
+      else
+        blocks.back()->addVal(std::string(arg.getName()), Alloca);
       
-      blocks.back()->addAddr(std::string(arg.getName()), Alloca);
-      blocks.back()->addVal(std::string(arg.getName()), Alloca);
       Builder.CreateStore(&arg, Alloca);
     }
-    
-    std::vector<std::string> previousVars = transferPrevBlockVariables(blocks);
+    /* 
     for (auto it :previousVars){
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, it, blocks.back()->getVar(it));
       blocks.back()->addAddr(it, Alloca);
       blocks.back()->addVal(it, Alloca);
-    }
+    } */
     // Compile other definitions
     for(AST *a: local_definitions) a->compile();
     Builder.SetInsertPoint(BB);
