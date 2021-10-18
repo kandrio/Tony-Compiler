@@ -5,6 +5,7 @@
 #include <llvm/IR/Value.h>
 #include "llvm/IR/Instructions.h"
 
+
 class LLVMListTypes {
 public:
     LLVMListTypes() {}
@@ -45,12 +46,22 @@ public:
     void setFun(llvm::Function *f1){
         fun = f1;
     }
+
+    void setHasRet(){
+        hasRet = true;
+    }
+
+    bool getHasRet(){
+        return hasRet;
+    }
     llvm::Function *getFun(){
         return fun;
     }
     
-    void addArg(std::string name, llvm::Type *type){
+    void addArg(std::string name, llvm::Type *type, PassMode p){
+
         args.push_back(type);
+        pass[name] = p;
         vars[name] = type;
     }
 
@@ -59,7 +70,8 @@ public:
         return false;
     }
 
-    void addVar(std::string name, llvm::Type *type){
+    void addVar(std::string name, llvm::Type *type, PassMode p){
+        pass[name] = p;
         vars[name] = type;
     }
 
@@ -86,6 +98,7 @@ public:
         return values[name];
     }
 
+
     std::vector<std::string> getAllKeys(){
         std::vector<std::string> keys; 
         for(auto it = vars.begin(); it!= vars.end(); ++it){
@@ -96,6 +109,7 @@ public:
 
     void setBlock(llvm::BasicBlock *BB){
         currentBB = BB;
+        hasRet = false;
     }
 
     llvm::BasicBlock * getCurrentBasicBlock(){
@@ -106,6 +120,14 @@ public:
         return args;
     }
 
+    bool isRef(std::string name){
+        return pass[name]==REF;
+    }
+
+    PassMode getPassMode(std::string name){
+        return pass[name];
+    }
+
 
 private:
     llvm::Function *fun;
@@ -113,6 +135,7 @@ private:
     std::map<std::string, llvm::Type *> vars;
     std::map<std::string, llvm::Value *> values;
     std::map<std::string, llvm::AllocaInst *> addrs;
+    std::map<std::string, PassMode> pass;
     llvm::BasicBlock *currentBB;
     bool hasRet;
 };
@@ -152,9 +175,10 @@ private:
     
 };
 
-static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBlock *> blocks){
+static std::pair<std::vector<std::string>, std::vector<llvm::Type*>> transferPrevBlockVariables(std::vector<RuntimeBlock *> blocks){
     std::vector<std::string> newKeys;
-    if(blocks.size() < 2) return newKeys;
+    std::vector<llvm::Type *> types;
+    if(blocks.size() < 2) return std::make_pair(newKeys, types);
     
     // Get all keys from previous scope
     RuntimeBlock *secondLast =  blocks.end()[-2];
@@ -165,11 +189,12 @@ static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBl
     for(auto it = keys.begin(); it!= keys.end(); ++it){    
         if(last->containsVar(*it)) continue;
         newKeys.push_back(*it);
-        last->addVar(*it, secondLast->getVar(*it));
+        types.push_back(secondLast->getVar(*it));
+        //last->addVar(*it, getLLVMRefType1(secondLast->getVar(*it)), REF);
     }
-    return newKeys;
+    return std::make_pair(newKeys, types);
 }
-
+/* 
 
  static llvm::Type *lookupVar(std::vector<RuntimeBlock *> blocks, std::string name){
     llvm::Type *t = nullptr;
@@ -187,7 +212,7 @@ static llvm::AllocaInst *lookupAddr(std::vector<RuntimeBlock *> blocks, std::str
         if (t!= nullptr) return t;
     }
     return nullptr;
-}
+} */
 
 static llvm::Value *lookupVal(std::vector<RuntimeBlock *> blocks, std::string name){
     llvm::Value *t= nullptr;
