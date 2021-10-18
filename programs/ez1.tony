@@ -1,8 +1,8 @@
-def main():
-    char [] x
-    x := new char[5]
-    x[0] := '4'
-    x[1] := '2'
-    putc(x[0])
-    putc(x[1])
+def int main():
+	int x
+    x := 5
+    if (x = 4):
+        return 32
+    end
+    return 5
 end

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <iostream>
+#include <unistd.h>
 #include <fstream>
 #include <map>
 #include <vector>
@@ -91,7 +92,9 @@ public:
 
     Builder.SetInsertPoint(BB);
     Builder.CreateCall(progFunc, {});
+    TheModule->print(llvm::errs(), nullptr);
     Builder.CreateRet(c32(0));
+    TheModule->print(llvm::errs(), nullptr);
 
     // Close Program Scope
     scopes.closeRuntimeScope();
@@ -1139,9 +1142,28 @@ public:
       // that exists in the function signature.
       v = Builder.CreateBitCast(v, blocks.back()->getFun()->getReturnType());
     }
-
+    /*
     return Builder.CreateRet(v);
-  } 
+    */
+    std:: cout << "hey1\n";
+    
+    llvm::AllocaInst* fun_ret_address = blocks.back()->getReturnAddress();
+    std:: cout << "hey2\n";
+    std::cout.flush();
+    //sleep(1);
+    Builder.CreateStore(v, fun_ret_address);
+    std:: cout << "hey3\n";
+    std::cout.flush();
+    //sleep(1);
+    llvm::BasicBlock* ret_bb = blocks.back()->getReturnBB();
+    std:: cout << "hey4\n";
+    std::cout.flush();
+    //sleep(1);
+    Builder.CreateBr(ret_bb);
+    std:: cout << "hey5\n";
+    std::cout.flush();
+    //sleep(1);
+  }
 private:
   Expr* ret_expr;
 };
@@ -1195,6 +1217,7 @@ public:
   virtual llvm::Value *compile() override {
     for (Stmt *s : stmts) {
       s->compile();
+      std:: cout << "compilation of stmt successfull\n";
     }
     return nullptr;
   }
@@ -1264,21 +1287,24 @@ public:
   void sem() override {}
 };
 
-
+/*
+ * This class represents Tony's `if`, `elsif` and `else` statements, not just `if`.
+ */
 class If: public Stmt {
 public:
-  If(Expr *if_condition, StmtBody *if_stmt_body, If* next): condition(if_condition), statement(if_stmt_body), nextIf(next) {}
+  If(Expr* if_condition, StmtBody* if_stmt_body, If* next):
+    condition(if_condition) ,stmt_body(if_stmt_body), next_if(next) {}
   ~If() {
     delete condition;
-    delete statement; 
-    if(nextIf != nullptr) delete nextIf;
+    delete stmt_body; 
+    if(next_if != nullptr) delete next_if;
   }
 
   virtual void printOn(std::ostream &out) const override {
     out << "\n<If>\n"; 
     if (condition != nullptr) out << *condition;
-    out << *statement;
-    if (nextIf != nullptr) out << *nextIf;
+    out << *stmt_body;
+    if (next_if != nullptr) out << *next_if;
     out << "\n</If>\n";
   }
 
@@ -1287,64 +1313,98 @@ public:
     if(condition != nullptr && !condition->type_check(TYPE_bool)) {
         yyerror("TonyType mismatch. 'If-condition' is not boolean.");
       }
-    statement->sem();
-    if(nextIf != nullptr) nextIf->sem();
+    stmt_body->sem();
+    if(next_if != nullptr) next_if->sem();
   }
 
-  virtual llvm::Value *compile() override {
-    
-    // Last Else Block
-    if(condition == nullptr && statement != nullptr){
-      statement->compile();
+  // TODO: Currently we create a `MergeBB` for each `if`/`elisf`/`else`
+  // statement. This works but it isn't correct. We must have only one
+  // `MergeBB` for the whole `if`-`then`-`else` statement.
+  llvm::Value* compile() override {
+    // IMPORTANT: We don't create a new basic block for this statement yet.
+    // The condition check for an `if` statement remains in the same
+    // basic block as statements before the `if`. BUT, later, we will start
+    // a new basic block for the statement body under `then`.
+
+    if (condition == nullptr) {
+      std:: cout << "we are in else\n";
+
+      // In this case, we are in an `else` statement (no condition).
+      if (stmt_body != nullptr) {
+        stmt_body->compile();
+      }
       return nullptr;
     }
-    llvm::Value *cond = condition->compile();
+    std:: cout << "we are in if\n";
+
+
+    llvm::Value* cond = condition->compile();
+    
+    // Why do we do that?
     if(!cond) return nullptr;
   
-    //Convert Condition to bool
+    // We convert the condition to an LLVM bool
     cond = Builder.CreateICmpNE(cond, c1(0), "ifcond");
     
+    // This is the function in which we're in. We will need this to create
+    // basic blocks later on, for `then`, `else` etc... 
+    llvm::Function* TheFunction = Builder.GetInsertBlock()->getParent();
 
-    llvm::Function *TheFunction = Builder.GetInsertBlock()->getParent();
+    // We create basic blocks (BB)
+    llvm::BasicBlock* then_bb  = llvm::BasicBlock::Create(TheContext, "then", TheFunction);
+    llvm::BasicBlock* else_bb  = llvm::BasicBlock::Create(TheContext, "else");
 
-    //Create Basic Blocks
-    llvm::BasicBlock *ThenBB = llvm::BasicBlock::Create(TheContext, "then", TheFunction);
-    llvm::BasicBlock *ElseBB = llvm::BasicBlock::Create(TheContext, "else"); 
-    llvm::BasicBlock *MergeBB= llvm::BasicBlock::Create(TheContext, "ifcont");
+    // This is te basic block that all the previous blocks (for `then` and `else`)
+    // will jump to, after their execution is finished. This way, the execution
+    // will move on after the `if-then-else` statement.
+    llvm::BasicBlock* merge_bb = llvm::BasicBlock::Create(TheContext, "exitfromif");
+    std:: cout << "we are in if\n";
+    Builder.CreateCondBr(cond, then_bb, else_bb);
+    std:: cout << "we are in if\n";
+    // This is the `then` statement. We start a new basic block.
+    Builder.SetInsertPoint(then_bb);
+    std:: cout << " before compilation of if successfull\n";
+    stmt_body->compile();
+    //Builder.CreateBr(merge_bb);
+    std:: cout << "compilation of if successfull\n";
 
-    Builder.CreateCondBr(cond, ThenBB, ElseBB);
+    // Why do we do that?
+    then_bb = Builder.GetInsertBlock();
+    std:: cout << "we are in if\n";
+
+    // Append the basic block for `else` to the list of basic blocks
+    // of this function.
+    TheFunction->getBasicBlockList().push_back(else_bb);
+    std:: cout << "we are in if\n";
     
-    // Then Statement  
-    Builder.SetInsertPoint(ThenBB);
-    statement->compile();
-    
-    Builder.CreateBr(MergeBB);
-    ThenBB = Builder.GetInsertBlock();
-        
-  
-    // Emit else block
-    TheFunction->getBasicBlockList().push_back(ElseBB);
-    
-    Builder.SetInsertPoint(ElseBB);
+    // This is the `else` or `elsif` statement. We start a new basic block.
+    Builder.SetInsertPoint(else_bb);
+    if(next_if != nullptr) {
+      next_if->compile();
+    }
+    //Builder.CreateBr(merge_bb);
+    std:: cout << "we are in if\n";
 
-    if(nextIf != nullptr)
-      nextIf->compile();
-    
-    Builder.CreateBr(MergeBB);
-    //Update current block, code for else can change it
-    ElseBB = Builder.GetInsertBlock();
+    // Update current block, code for else can change it.
+    // Why do we do that?
+    else_bb = Builder.GetInsertBlock();
+    std:: cout << "we are in if\n";
 
-    //Emit Merge Block
-    TheFunction->getBasicBlockList().push_back(MergeBB);
-    Builder.SetInsertPoint(MergeBB);
+    // Append the basic block that comes after the whole `if-then-else`
+    // statement to the list of basic blocks of this current function.
+    TheFunction->getBasicBlockList().push_back(merge_bb);
+    std:: cout << "we are in if\n";
+    
+    // The execution of the program continues in a new basic block.
+    Builder.SetInsertPoint(merge_bb);
     return nullptr;
   } 
 
 
 private:
-  Expr *     condition;
-  StmtBody * statement;
-  If *nextIf;
+  Expr*     condition;
+  StmtBody* stmt_body;
+  If*       next_if;
 };
 
 class SimpleList: public AST {
@@ -1756,18 +1816,22 @@ public:
 
     // CREATE Basic Block
     llvm::BasicBlock *BB = llvm::BasicBlock::Create(TheContext, "entry", Fun);
-    Builder.SetInsertPoint(BB);    
+    Builder.SetInsertPoint(BB);
     blocks.back()->setBlock(BB);
 
     // Insert Parameters
+    llvm::AllocaInst* alloca;
     for (auto &arg: Fun->args()) {
-      llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
+      alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
       
-      blocks.back()->addAddr(std::string(arg.getName()), Alloca);
-      blocks.back()->addVal(std::string(arg.getName()), Alloca);
-      Builder.CreateStore(&arg, Alloca);
+      blocks.back()->addAddr(std::string(arg.getName()), alloca);
+      blocks.back()->addVal(std::string(arg.getName()), alloca);
+      Builder.CreateStore(&arg, alloca);
     }
-    
+    alloca =
+      CreateEntryBlockAlloca(Fun, "retparam", getOrCreateLLVMTypeFromTonyType(header->getType()));
+    blocks.back()->setReturnAddress(alloca);
+
     std::vector<std::string> previousVars = transferPrevBlockVariables(blocks);
     for (auto it :previousVars){
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, it, blocks.back()->getVar(it));
@@ -1776,13 +1840,29 @@ public:
     }
     // Compile other definitions
     for(AST *a: local_definitions) a->compile();
+    
+    llvm::BasicBlock* ret_bb = llvm::BasicBlock::Create(TheContext, "ret", Fun);
+    blocks.back()->setReturnBB(ret_bb);
+    
     Builder.SetInsertPoint(BB);
+    std:: cout << "everything ok before compilation\n";
     
     body->compile();
     
+    std:: cout << "hey1def\n";
+
+    Builder.SetInsertPoint(ret_bb);
+    std:: cout << "hey2def\n";
+
     if(!header->getIsTyped())
       Builder.CreateRet(nullptr);
-    
+    else {
+      llvm::Value* ret_val =
+        Builder.CreateLoad(blocks.back()->getReturnAddress(), "retval");
+      Builder.CreateRet(ret_val);
+    }
+    std:: cout << "hey3def\n";
+
     blocks.pop_back();
     scopes.closeRuntimeScope();
     if(!isMain)

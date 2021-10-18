@@ -72,6 +72,22 @@ public:
         addrs[name] = alloca;
     }
 
+    void setReturnAddress(llvm::AllocaInst* alloca) {
+        return_address = alloca;
+    }
+
+    llvm::AllocaInst* getReturnAddress() {
+        return return_address;
+    }
+
+    void setReturnBB(llvm::BasicBlock* b) {
+        return_bb = b;
+    }
+
+    llvm::BasicBlock* getReturnBB() {
+        return return_bb;
+    }
+
     llvm::AllocaInst *getAddr(std::string name){
         if (addrs.count(name) == 0) {return nullptr;}
         return addrs[name];
@@ -114,6 +130,8 @@ private:
     std::map<std::string, llvm::Value *> values;
     std::map<std::string, llvm::AllocaInst *> addrs;
     llvm::BasicBlock *currentBB;
+    llvm::BasicBlock* return_bb;
+    llvm::AllocaInst* return_address;
     bool hasRet;
 };
 
