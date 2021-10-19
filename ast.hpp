@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <memory>
 #include "symbol.hpp"
 #include "runtime.hpp"
 #include "type.hpp"
@@ -189,15 +190,11 @@ protected:
     else return llvm::ConstantInt::getFalse(TheContext);
     
   }
-
   static llvm::ConstantInt* c8(char c) {
     return llvm::ConstantInt::get(TheContext, llvm::APInt(8, c, true));
   }
   static llvm::ConstantInt* c32(int n) {
     return llvm::ConstantInt::get(TheContext, llvm::APInt(32, n, true));
-  }
-  static llvm::ConstantInt* c64(int n) {
-    return llvm::ConstantInt::get(TheContext, llvm::APInt(64, n, true));
   }
 
   /*
@@ -1251,12 +1248,18 @@ public:
       // because we want to STORE the value of the right expression into
       // this element.
       atom->setPassByValue(false);
-      variable = atom->compile();
+      variable = atom->compile();    
+      value = Builder.CreateBitCast(value, LLVMType);
+      return Builder.CreateStore(value, variable);
     } else {
-      variable = blocks.back()->getVal(atom->getName());
+      //Normal Variable
+      if(blocks.back()->isRef(atom->getName())){
+        auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
+        return Builder.CreateStore(value, addr);
+      }else
+        return Builder.CreateStore(value, blocks.back()->getVal(atom->getName())); 
     }
-    value = Builder.CreateBitCast(value, LLVMType);
-    Builder.CreateStore(value, variable);
+
     return nullptr;
   } 
 private:
@@ -1543,26 +1546,44 @@ public:
   virtual llvm::Value *compile() override {
     std::vector<llvm::Value*> compiled_params;
     llvm::Function* called_function = scopes.getFun(name->getName());
+    std::vector<Expr *> parameters = params->get_expr_list();
     
-    // An iterator over the LLVM types of the parameters in the
-    // function signature.
-    llvm::FunctionType::param_iterator iter =
-      called_function->getFunctionType()->param_begin();
     llvm::Value* v;
-    if(hasParams) {
-      for (Expr* param : params->get_expr_list()) {
-        v = param->compile();
+    int index = 0;
+    for (auto &Arg: called_function->args()){
+      if(!Arg.getType()->isPointerTy()){
+        // Case : Call by value or constants/ expressions
+        v = parameters[index]->compile();
+          
+          if (is_nil_constant(parameters[index]->get_type())) {
+            // If `nil` is passed as an input parameter, we must change
+            // its LLVM type (null pointer to an i32) to the type of the
+            // corresponding parameter in the function signature.
+            v = Builder.CreateBitCast(v, Arg.getType());
+          }
+        compiled_params.push_back(v);
+        index++;
+        continue;
+      }
+
+      if(parameters[index]->get_type()->get_current_type() == TYPE_list || parameters[index]->get_type()->get_current_type() == TYPE_array){
+        v = parameters[index]->compile();
         
-        if (is_nil_constant(param->get_type())) {
-          // If `nil` is passed as an input parameter, we must change
-          // its LLVM type (null pointer to an i32) to the type of the
-          // corresponding parameter in the function signature.
-          v = Builder.CreateBitCast(v, *iter);
+        if (is_nil_constant(parameters[index]->get_type())) {
+          v = Builder.CreateBitCast(v, Arg.getType());
         }
         compiled_params.push_back(v);
-        iter++;
-      }   
-    }
+        index++;
+        continue;
+      }
+
+      // Case : By reference values
+      auto var = dynamic_cast<Id*> (parameters[index]);
+      compiled_params.push_back(blocks.back()->getAddr(var->getName()));
+      index++;
+
+    }   
+
     return Builder.CreateCall(called_function, compiled_params);
   }
 
@@ -1754,12 +1775,15 @@ public:
     }
 
     //Getting previous scope vars, only gets strings which are not already included in function parameters
-    std::vector<std::string> previousVars = transferPrevBlockVariables(blocks);
-/*     for(auto it :previousVars){
-      llvm::Type * t = getLLVMRefType(blocks.back()->getVar(it));
-
-      blocks.back()->addArg(it, t);
+/*     std::pair<std::vector<std::string>, std::vector<llvm::Type*>> previousVars = transferPrevBlockVariables(blocks);
+    std::vector<std::string> previousVarKeys = previousVars.first;
+    std::vector<llvm::Type *> previousVarTypes = previousVars.second;
+    for(int i=0; i<previousVarKeys.size(); ++i){
+      llvm::Type * t = getLLVMRefType(previousVarTypes[i]);
+      blocks.back()->addArg(previousVarKeys[i], t, REF);
     } */
+
+    
 
     // TODO: Here i should first check if func is declared
 

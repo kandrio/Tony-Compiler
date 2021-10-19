@@ -5,6 +5,7 @@
 #include <llvm/IR/Value.h>
 #include "llvm/IR/Instructions.h"
 
+
 class LLVMListTypes {
 public:
     LLVMListTypes() {}
@@ -174,9 +175,10 @@ private:
     
 };
 
-static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBlock *> blocks){
+static std::pair<std::vector<std::string>, std::vector<llvm::Type*>> transferPrevBlockVariables(std::vector<RuntimeBlock *> blocks){
     std::vector<std::string> newKeys;
-    if(blocks.size() < 2) return newKeys;
+    std::vector<llvm::Type *> types;
+    if(blocks.size() < 2) return std::make_pair(newKeys, types);
     
     // Get all keys from previous scope
     RuntimeBlock *secondLast =  blocks.end()[-2];
@@ -187,9 +189,10 @@ static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBl
     for(auto it = keys.begin(); it!= keys.end(); ++it){    
         if(last->containsVar(*it)) continue;
         newKeys.push_back(*it);
-        last->addVar(*it, secondLast->getVar(*it), secondLast->getPassMode(*it));
+        types.push_back(secondLast->getVar(*it));
+        //last->addVar(*it, getLLVMRefType1(secondLast->getVar(*it)), REF);
     }
-    return newKeys;
+    return std::make_pair(newKeys, types);
 }
 /* 
 
