@@ -258,8 +258,9 @@ protected:
 
 
 
-    if(mode == REF)
+    if(mode == REF){
       retType = retType->getPointerTo();
+    }
     return retType;
   }
 
@@ -365,9 +366,18 @@ public:
   }
 
   virtual llvm::Value *compile() override {
-    llvm::Value *v = lookupVal(blocks, var);
 
-    return Builder.CreateLoad(v, var.c_str());
+    if(!blocks.back()->isRef(var)){
+      // By value variable
+      llvm::Value *v = blocks.back()->getVal(var);
+
+      return Builder.CreateLoad(v);
+    } else{
+      // By reference variable
+      llvm::AllocaInst *alloca = blocks.back()->getAddr(var);
+      auto *addr = Builder.CreateLoad(alloca);
+      return Builder.CreateLoad(addr);
+    }
   } 
 
   virtual bool isLvalue() override{
@@ -847,7 +857,7 @@ public:
     for (Id * id: ids) {
       // TODO: PASSMODE
       llvm::AllocaInst* alloca = Builder.CreateAlloca(t, 0, id->getName());
-      blocks.back()->addVar(id->getName(), t);
+      blocks.back()->addVar(id->getName(), t, type->getPassMode());
       blocks.back()->addAddr(id->getName(), alloca);
       blocks.back()->addVal(id->getName(), alloca);
     }
@@ -1146,6 +1156,7 @@ public:
     }
 
     return Builder.CreateRet(v);
+    blocks.back()->setHasRet();
   } 
 private:
   Expr* ret_expr;
@@ -1242,7 +1253,7 @@ public:
       atom->setPassByValue(false);
       variable = atom->compile();
     } else {
-      variable = lookupVal(blocks, atom->getName());
+      variable = blocks.back()->getVal(atom->getName());
     }
     value = Builder.CreateBitCast(value, LLVMType);
     Builder.CreateStore(value, variable);
@@ -1321,27 +1332,27 @@ public:
     
     // Then Statement  
     Builder.SetInsertPoint(ThenBB);
+    blocks.back()->setBlock(ThenBB);
     statement->compile();
     
-    Builder.CreateBr(MergeBB);
-    ThenBB = Builder.GetInsertBlock();
-        
+    if(!blocks.back()->getHasRet())
+      Builder.CreateBr(MergeBB);
   
     // Emit else block
     TheFunction->getBasicBlockList().push_back(ElseBB);
-    
     Builder.SetInsertPoint(ElseBB);
+    blocks.back()->setBlock(ElseBB);
 
     if(nextIf != nullptr)
       nextIf->compile();
-    
-    Builder.CreateBr(MergeBB);
+    if(!blocks.back()->getHasRet())
+      Builder.CreateBr(MergeBB);
     //Update current block, code for else can change it
-    ElseBB = Builder.GetInsertBlock();
 
     //Emit Merge Block
     TheFunction->getBasicBlockList().push_back(MergeBB);
     Builder.SetInsertPoint(MergeBB);
+    blocks.back()->setBlock(MergeBB);
     return nullptr;
   } 
 
@@ -1738,8 +1749,8 @@ public:
     std::vector<std::string> argNames = header->getNames();
 
     for(int i=0; i<argTypes.size(); i++ ){
-      llvm::Type * translated = getOrCreateLLVMTypeFromTonyType(argTypes[i]);
-      blocks.back()->addArg(argNames[i], translated);
+      llvm::Type * translated = getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
+      blocks.back()->addArg(argNames[i], translated, argTypes[i]->getPassMode());
     }
 
     //Getting previous scope vars, only gets strings which are not already included in function parameters
@@ -1753,7 +1764,7 @@ public:
     // TODO: Here i should first check if func is declared
 
     llvm::FunctionType *FT =
-      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(header->getType()),
+      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(header->getType(), header->getType()->getPassMode()),
                               blocks.back()->getArgs(), false);
 
     llvm::Function *Fun = llvm::Function::Create(FT,llvm::Function::ExternalLinkage, header->getName(), TheModule.get());
@@ -1775,7 +1786,7 @@ public:
     // Insert Parameters
     for (auto &arg: Fun->args()) {
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
-      if(arg->isPointerTy())
+      if(blocks.back()->isRef(std::string(arg.getName())))
         blocks.back()->addAddr(std::string(arg.getName()), Alloca);
       else
         blocks.back()->addVal(std::string(arg.getName()), Alloca);

@@ -45,12 +45,22 @@ public:
     void setFun(llvm::Function *f1){
         fun = f1;
     }
+
+    void setHasRet(){
+        hasRet = true;
+    }
+
+    bool getHasRet(){
+        return hasRet;
+    }
     llvm::Function *getFun(){
         return fun;
     }
     
-    void addArg(std::string name, llvm::Type *type){
+    void addArg(std::string name, llvm::Type *type, PassMode p){
+
         args.push_back(type);
+        pass[name] = p;
         vars[name] = type;
     }
 
@@ -59,7 +69,8 @@ public:
         return false;
     }
 
-    void addVar(std::string name, llvm::Type *type){
+    void addVar(std::string name, llvm::Type *type, PassMode p){
+        pass[name] = p;
         vars[name] = type;
     }
 
@@ -97,6 +108,7 @@ public:
 
     void setBlock(llvm::BasicBlock *BB){
         currentBB = BB;
+        hasRet = false;
     }
 
     llvm::BasicBlock * getCurrentBasicBlock(){
@@ -107,6 +119,14 @@ public:
         return args;
     }
 
+    bool isRef(std::string name){
+        return pass[name]==REF;
+    }
+
+    PassMode getPassMode(std::string name){
+        return pass[name];
+    }
+
 
 private:
     llvm::Function *fun;
@@ -114,6 +134,7 @@ private:
     std::map<std::string, llvm::Type *> vars;
     std::map<std::string, llvm::Value *> values;
     std::map<std::string, llvm::AllocaInst *> addrs;
+    std::map<std::string, PassMode> pass;
     llvm::BasicBlock *currentBB;
     bool hasRet;
 };
@@ -166,7 +187,7 @@ static std::vector<std::string> transferPrevBlockVariables(std::vector<RuntimeBl
     for(auto it = keys.begin(); it!= keys.end(); ++it){    
         if(last->containsVar(*it)) continue;
         newKeys.push_back(*it);
-        last->addVar(*it, secondLast->getVar(*it));
+        last->addVar(*it, secondLast->getVar(*it), secondLast->getPassMode(*it));
     }
     return newKeys;
 }
