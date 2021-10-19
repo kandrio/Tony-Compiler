@@ -1245,7 +1245,7 @@ public:
     }
   }
 
-  virtual llvm::Value* compile() override {
+  llvm::Value* compile() override {
     llvm::Type* LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
     llvm::Value* value = expr->compile();
     llvm::Value* variable;
@@ -1262,14 +1262,18 @@ public:
       atom->setPassByValue(false);
       variable = atom->compile();    
       value = Builder.CreateBitCast(value, LLVMType);
-      return Builder.CreateStore(value, variable);
+      Builder.CreateStore(value, variable);
     } else {
       //Normal Variable
-      if(blocks.back()->isRef(atom->getName())){
+      if(blocks.back()->isRef(atom->getName())) {
+        std::cout << "hello\n";
         auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
-        return Builder.CreateStore(value, addr);
-      }else
-        return Builder.CreateStore(value, blocks.back()->getVal(atom->getName())); 
+        value = Builder.CreateBitCast(value, LLVMType);
+        Builder.CreateStore(value, addr);
+      } else {
+        value = Builder.CreateBitCast(value, LLVMType);
+        Builder.CreateStore(value, blocks.back()->getVal(atom->getName()));
+      }
     }
 
     return nullptr;
@@ -1585,7 +1589,7 @@ public:
     return false;
   }
 
-  virtual llvm::Value *compile() override {
+  llvm::Value* compile() override {
     std::vector<llvm::Value*> compiled_params;
     llvm::Function* called_function = scopes.getFun(name->getName());
     std::vector<Expr *> parameters = params->get_expr_list();
@@ -1608,7 +1612,14 @@ public:
         continue;
       }
 
-      if(parameters[index]->get_type()->get_current_type() == TYPE_list || parameters[index]->get_type()->get_current_type() == TYPE_array){
+      if (dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
+        ArrayElement* a = dynamic_cast<ArrayElement*>(parameters[index]);
+        a->setPassByValue(false);
+      }
+
+      if(parameters[index]->get_type()->get_current_type() == TYPE_list  ||
+         parameters[index]->get_type()->get_current_type() == TYPE_array ||
+         dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
         v = parameters[index]->compile();
         
         if (is_nil_constant(parameters[index]->get_type())) {
