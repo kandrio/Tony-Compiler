@@ -1592,8 +1592,11 @@ public:
   llvm::Value* compile() override {
     std::vector<llvm::Value*> compiled_params;
     llvm::Function* called_function = scopes.getFun(name->getName());
-    std::vector<Expr *> parameters = params->get_expr_list();
     
+    std::vector<Expr *> parameters;
+    if (hasParams){
+      parameters = params->get_expr_list();
+    }
     llvm::Value* v;
     int index = 0;
     for (auto &Arg: called_function->args()){
