@@ -1041,6 +1041,7 @@ public:
       fun = new TonyType(TYPE_function, nullptr, type, args, true); 
     }
     id->set_type(fun);
+    st.setScopeFunction(fun);
     
     // Check if function is previously defined
     SymbolEntry *e = st.lookupParentScope(id->getName(), T_FUNC);
@@ -1583,6 +1584,8 @@ public:
       }
     }
     type = name->get_type()->get_return_type();
+
+    
   }
 
   virtual bool isLvalue() override {
@@ -1603,23 +1606,18 @@ public:
       if(!Arg.getType()->isPointerTy()){
         // Case : Call by value or constants/ expressions
         v = parameters[index]->compile();
-          
-          if (is_nil_constant(parameters[index]->get_type())) {
-            // If `nil` is passed as an input parameter, we must change
-            // its LLVM type (null pointer to an i32) to the type of the
-            // corresponding parameter in the function signature.
-            v = Builder.CreateBitCast(v, Arg.getType());
-          }
         compiled_params.push_back(v);
         index++;
         continue;
       }
 
+      // Case : Array Element
       if (dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
         ArrayElement* a = dynamic_cast<ArrayElement*>(parameters[index]);
         a->setPassByValue(false);
       }
 
+      // Case : List / Array Element
       if(parameters[index]->get_type()->get_current_type() == TYPE_list  ||
          parameters[index]->get_type()->get_current_type() == TYPE_array ||
          dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
@@ -1792,6 +1790,7 @@ public:
     // Global Scope including functions first
     bool isFirstScope = false;
     if(!st.hasParentScope()){
+      std::cout << "I am here";
       isFirstScope = true;
       st.openScope(new TonyType(TYPE_void, nullptr));
       initFunctions();
@@ -1799,6 +1798,9 @@ public:
     st.openScope(header->getType());
 
     header->semHeaderDef();
+
+    functionType = st.getScopeFunction();
+
     for (AST *a : local_definitions) a->sem();
     body->sem();
     if(header->getIsTyped() && !st.getScopeHasReturn()){
@@ -1918,6 +1920,7 @@ private:
   Header *header;
   StmtBody *body;
   std::vector<AST *> local_definitions;
+  TonyType *functionType;
   bool isMain;
 };
 

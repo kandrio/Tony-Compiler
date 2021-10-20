@@ -82,6 +82,15 @@ public:
     std::vector<TonyType *> get_function_args (){
       return function_args;
     }
+
+    void addPreviousScopeArg (std::string arg){
+      previous_scope_args.push_back(arg);
+    }
+
+    std::vector<std::string> getPreviousScopeArg (){
+      return previous_scope_args;
+    }
+
     bool isDeclared() {
       return declDef;
     }
@@ -96,6 +105,7 @@ protected:
     //For functions only
     TonyType *returnType;
     std::vector<TonyType *> function_args;
+    std::vector<std::string> previous_scope_args;
     bool declDef;
 
     //For arrays only

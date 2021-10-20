@@ -46,7 +46,7 @@ public:
     }
 
     void insertFunc(std::string c, TonyType* t){
-        if (functions.find(c) != functions.end()) yyerror("Function already declared");
+        if (functions.find(c) != functions.end()) yyerror("Function %s already declared", c.c_str());
         functions[c] = SymbolEntry(t);
         ++size;
     }
@@ -69,11 +69,20 @@ public:
     bool getHasReturn(){
         return hasReturn;
     }
+    
+    void setScopeFunction(TonyType *f){
+        functionType = f;
+    }
+    
+    TonyType * getScopeFunction(){
+        return functionType
+    }
 private:
     std::map<std::string, SymbolEntry> locals;
     std::map<std::string, SymbolEntry> functions;
     int size;
     TonyType *returnType;
+    TonyType *functionType;
     bool hasReturn;
 };
 
@@ -127,6 +136,14 @@ public:
     void closeScope(){
         scopes.pop_back();
     }
+
+    void setScopeFunction(TonyType *f){
+        scopes.back().setScopeFunction(f);
+    }
+    TonyType *getScopeFunction(){
+        scopes.back().getScopeFunction();
+    }
+
     int getSizeOfCurrentScope() const {
         return scopes.back().getSize();
     }
@@ -155,7 +172,6 @@ public:
             std::cout << std::string(scopecounter*4, ' ') << "</Scope " << scopecounter << ">" <<std::endl;
             scopecounter++;
         }
-
     }
 private:
     std::vector<Scope> scopes;
