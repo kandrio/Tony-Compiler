@@ -58,8 +58,7 @@ public:
         return fun;
     }
     
-    void addArg(std::string name, llvm::Type *type, PassMode p){
-
+    void addArg(std::string name, llvm::Type *type, PassMode p) {
         args.push_back(type);
         pass[name] = p;
         vars[name] = type;

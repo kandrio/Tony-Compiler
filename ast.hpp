@@ -420,13 +420,19 @@ public:
 
   virtual llvm::Value *compile() override {
     llvm::Value* array_index = expr->compile();
-    llvm::Value* v = lookupVal(blocks, getName());
-    if(!v) yyerror("Array not Found");
-    llvm::Value* array =
-      Builder.CreateLoad(v, getName().c_str());
+    llvm::Value *v, *array;
+    if(dynamic_cast<Id*>(atom) == nullptr) {
+      array = atom->compile();
+    } else if(blocks.back()->isRef(getName())) {
+      v = Builder.CreateLoad(blocks.back()->getAddr(getName()));
+      array = Builder.CreateLoad(v, getName().c_str());
+    } else {
+      v = blocks.back()->getVal(getName());
+      array = Builder.CreateLoad(v, getName().c_str());
+    }
+    
     llvm::Value* elem_ptr = Builder.CreateGEP(array, array_index);
     if (pass_by_value) {
-      
       // In this case, the ArrayElement is NOT used on the left side
       // of an assignment, but on the right.
       return Builder.CreateLoad(elem_ptr, "elem");
@@ -1248,7 +1254,7 @@ public:
   }
 
   llvm::Value* compile() override {
-    llvm::Type* LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
+    llvm::Type*  LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
     llvm::Value* value = expr->compile();
     llvm::Value* variable;
 
@@ -1256,14 +1262,16 @@ public:
     // known beforehand (by looking at the RuntimeTable). So, we run
     // `ArrayElement.compile()` instead of just doing a lookup in the table.
     if (atom->isArrayElement()) {
+      std::cout << "Left ArrayElement in Assignment\n";
 
       // This will inform `ArrayElement.compile()` to return the address of
       // the element, not the actual value inside the element. This is
       // because we want to STORE the value of the right expression into
       // this element.
       atom->setPassByValue(false);
-      variable = atom->compile();    
+      variable = atom->compile();
       value = Builder.CreateBitCast(value, LLVMType);
+      std::cout << "Bitcast worked just fine\n";
       Builder.CreateStore(value, variable);
     } else {
       //Normal Variable
@@ -1591,62 +1599,47 @@ public:
   }
 
   llvm::Value* compile() override {
+    llvm::Function* llvm_function = scopes.getFun(name->getName());
     std::vector<llvm::Value*> compiled_params;
-    llvm::Function* called_function = scopes.getFun(name->getName());
-    
-    std::vector<Expr *> parameters;
+    std::vector<Expr*> parameter_exprs;
     if (hasParams) {
-      parameters = params->get_expr_list();
+      parameter_exprs = params->get_expr_list();
     }
+
     llvm::Value* v;
     int index = 0;
-    for (auto &Arg: called_function->args()){
-      if(!Arg.getType()->isPointerTy()) {
-        // Case : Call by value or constants/ expressions
-        v = parameters[index]->compile();
+    for (auto &arg: llvm_function->args()) {
+      PassMode p = name->get_type()->get_function_args()[index]->getPassMode();
+      if(p == VAL) {
+        // In this case, the input argument 'arg' is passed BY VALUE in the
+        // function.
+        v = parameter_exprs[index]->compile();
           
-          if (is_nil_constant(parameters[index]->get_type())) {
-            // If `nil` is passed as an input parameter, we must change
-            // its LLVM type (null pointer to an i32) to the type of the
-            // corresponding parameter in the function signature.
-            v = Builder.CreateBitCast(v, Arg.getType());
-          }
-        compiled_params.push_back(v);
-        index++;
-        continue;
-      }
+        if (is_nil_constant(parameter_exprs[index]->get_type())) {
+          // If `nil` is passed as an input parameter, we must change
+          // its LLVM type (null pointer to an i32) to the type of the
+          // corresponding parameter in the function signature.
+          v = Builder.CreateBitCast(v, arg.getType());
+        }
+      } else {
+        // In this case, the input argument 'arg' is passed BY REFERENCE in the
+        // function.
 
-      if (dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
-        ArrayElement* a = dynamic_cast<ArrayElement*>(parameters[index]);
-        a->setPassByValue(false);
-      }
-
-      if(parameters[index]->get_type()->get_current_type() == TYPE_list  ||
-         parameters[index]->get_type()->get_current_type() == TYPE_array ||
-         dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
-        Id* idd = dynamic_cast<Id*>(parameters[index]);
-        if (idd != nullptr) {
-          if(!blocks.back()->isRef(idd->getName())) {
-            std::cout << "is by value\n";
-            v = parameters[index]->compile();
-            if (is_nil_constant(parameters[index]->get_type())) {
-              v = Builder.CreateBitCast(v, Arg.getType());
-            }
-            compiled_params.push_back(v);
-            index++;
-            continue;
-          }
+        ArrayElement* arr_elem = dynamic_cast<ArrayElement*>(parameter_exprs[index]);
+        if (arr_elem != nullptr) {
+          // Special case, if 'arg' is an array element, e.g: a[0].
+          arr_elem->setPassByValue(false);
+          v = arr_elem->compile();
+        } else {
+          // General case, where 'arg' is a variable
+          auto var = dynamic_cast<Id*> (parameter_exprs[index]);
+          v = blocks.back()->getAddr(var->getName());
         }
       }
-
-      // Case : By reference values
-      std::cout << "hello\n";
-      auto var = dynamic_cast<Id*> (parameters[index]);
-      compiled_params.push_back(blocks.back()->getAddr(var->getName()));
+      compiled_params.push_back(v);
       index++;
     }
-
-    return Builder.CreateCall(called_function, compiled_params);
+    return Builder.CreateCall(llvm_function, compiled_params);
   }
 
   virtual std::string getName() override {
@@ -1823,29 +1816,26 @@ public:
     isMain = true;
   }
 
-  virtual llvm::Value *compile () override {
+  llvm::Value* compile() override {
 
-    RuntimeBlock *newBlock = new RuntimeBlock();
+    RuntimeBlock* newBlock = new RuntimeBlock();
     blocks.push_back(newBlock);
 
-    std::vector<TonyType *> argTypes = header->getArgs();
+    std::vector<TonyType*> argTypes = header->getArgs();
     std::vector<std::string> argNames = header->getNames();
-
-    for(int i=0; i<argTypes.size(); i++ ){
-      llvm::Type * translated = getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
-      blocks.back()->addArg(argNames[i], translated, argTypes[i]->getPassMode());
+    std::cout << "ARG NAMES in FUNC DEFINITION\n";
+    for (std::string x: argNames) {
+      std::cout << x << "\n";
+    } 
+    llvm::Type* LLVMType;
+    for(int i=0; i<argTypes.size(); i++) {
+      LLVMType =
+        getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
+      blocks.back()->addArg(argNames[i], LLVMType, argTypes[i]->getPassMode());
+      if (!blocks.back()->getVar("y")) {
+        std::cout <<"arg just got in and now it doesnt exist\n";
+      }
     }
-
-    //Getting previous scope vars, only gets strings which are not already included in function parameters
-/*     std::pair<std::vector<std::string>, std::vector<llvm::Type*>> previousVars = transferPrevBlockVariables(blocks);
-    std::vector<std::string> previousVarKeys = previousVars.first;
-    std::vector<llvm::Type *> previousVarTypes = previousVars.second;
-    for(int i=0; i<previousVarKeys.size(); ++i){
-      llvm::Type * t = getLLVMRefType(previousVarTypes[i]);
-      blocks.back()->addArg(previousVarKeys[i], t, REF);
-    } */
-
-    
 
     // TODO: Here i should first check if func is declared
 
@@ -1879,16 +1869,11 @@ public:
       }
       Builder.CreateStore(&arg, Alloca);
     }
-    /* 
-    for (auto it :previousVars){
-      llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, it, blocks.back()->getVar(it));
-      blocks.back()->addAddr(it, Alloca);
-      blocks.back()->addVal(it, Alloca);
-    } */
+
     // Compile other definitions
     for(AST *a: local_definitions) a->compile();
     Builder.SetInsertPoint(BB);
-    
+
     body->compile();
     
     if (Fun->getReturnType()->isVoidTy()) {
