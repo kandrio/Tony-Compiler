@@ -236,7 +236,7 @@ protected:
           llvm_list_types.insert(hash, pointer_to_node_type);
           list_type = pointer_to_node_type;
         }
-        return list_type; break;
+        retType = list_type; break;
       }
       case TYPE_array: {
         llvm::Type* element_type =
@@ -244,18 +244,20 @@ protected:
         if (t->get_array_size() == 0) {
           llvm::PointerType* array_type =
             llvm::PointerType::get(element_type, 0);
-          return array_type;
-        }
+          retType = array_type;
+        } else {
         llvm::ArrayType* array_type =
           llvm::ArrayType::get(element_type, t->get_array_size());
-        return array_type; break;
+        retType = array_type;
+        }
+        break;
       }
       default: yyerror("Type conversion not implemented yet");
     }
 
 
 
-    if(mode == REF){
+    if(mode == REF) {
       retType = retType->getPointerTo();
     }
     return retType;
@@ -1266,7 +1268,6 @@ public:
     } else {
       //Normal Variable
       if(blocks.back()->isRef(atom->getName())) {
-        std::cout << "hello\n";
         auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
         value = Builder.CreateBitCast(value, LLVMType);
         Builder.CreateStore(value, addr);
@@ -1594,13 +1595,13 @@ public:
     llvm::Function* called_function = scopes.getFun(name->getName());
     
     std::vector<Expr *> parameters;
-    if (hasParams){
+    if (hasParams) {
       parameters = params->get_expr_list();
     }
     llvm::Value* v;
     int index = 0;
     for (auto &Arg: called_function->args()){
-      if(!Arg.getType()->isPointerTy()){
+      if(!Arg.getType()->isPointerTy()) {
         // Case : Call by value or constants/ expressions
         v = parameters[index]->compile();
           
@@ -1623,22 +1624,27 @@ public:
       if(parameters[index]->get_type()->get_current_type() == TYPE_list  ||
          parameters[index]->get_type()->get_current_type() == TYPE_array ||
          dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
-        v = parameters[index]->compile();
-        
-        if (is_nil_constant(parameters[index]->get_type())) {
-          v = Builder.CreateBitCast(v, Arg.getType());
+        Id* idd = dynamic_cast<Id*>(parameters[index]);
+        if (idd != nullptr) {
+          if(!blocks.back()->isRef(idd->getName())) {
+            std::cout << "is by value\n";
+            v = parameters[index]->compile();
+            if (is_nil_constant(parameters[index]->get_type())) {
+              v = Builder.CreateBitCast(v, Arg.getType());
+            }
+            compiled_params.push_back(v);
+            index++;
+            continue;
+          }
         }
-        compiled_params.push_back(v);
-        index++;
-        continue;
       }
 
       // Case : By reference values
+      std::cout << "hello\n";
       auto var = dynamic_cast<Id*> (parameters[index]);
       compiled_params.push_back(blocks.back()->getAddr(var->getName()));
       index++;
-
-    }   
+    }
 
     return Builder.CreateCall(called_function, compiled_params);
   }
@@ -1866,11 +1872,11 @@ public:
     // Insert Parameters
     for (auto &arg: Fun->args()) {
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
-      if(blocks.back()->isRef(std::string(arg.getName())))
+      if(blocks.back()->isRef(std::string(arg.getName()))) {
         blocks.back()->addAddr(std::string(arg.getName()), Alloca);
-      else
+      } else {
         blocks.back()->addVal(std::string(arg.getName()), Alloca);
-      
+      }
       Builder.CreateStore(&arg, Alloca);
     }
     /* 
