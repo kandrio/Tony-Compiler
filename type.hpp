@@ -14,7 +14,7 @@ class TonyType {
 public:
     TonyType(TypeBlock current, TonyType *nested): current_type(current), nested_type(nested), pass(VAL) {}
     TonyType(TypeBlock current, TonyType *nested, TonyType *ret, std::vector<TonyType *> args, bool dec): 
-    current_type(current), nested_type(nested), returnType(ret), function_args(args), declDef(dec), pass(VAL){    }
+    current_type(current), nested_type(nested), returnType(ret), function_args(args), declDef(dec), pass(VAL){}
     ~TonyType() {delete nested_type;};
     TypeBlock get_current_type() {
         return current_type;

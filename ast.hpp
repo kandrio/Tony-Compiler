@@ -236,7 +236,7 @@ protected:
           llvm_list_types.insert(hash, pointer_to_node_type);
           list_type = pointer_to_node_type;
         }
-        return list_type; break;
+        retType = list_type; break;
       }
       case TYPE_array: {
         llvm::Type* element_type =
@@ -244,18 +244,20 @@ protected:
         if (t->get_array_size() == 0) {
           llvm::PointerType* array_type =
             llvm::PointerType::get(element_type, 0);
-          return array_type;
-        }
+          retType = array_type;
+        } else {
         llvm::ArrayType* array_type =
           llvm::ArrayType::get(element_type, t->get_array_size());
-        return array_type; break;
+        retType = array_type;
+        }
+        break;
       }
       default: yyerror("Type conversion not implemented yet");
     }
 
 
 
-    if(mode == REF){
+    if(mode == REF) {
       retType = retType->getPointerTo();
     }
     return retType;
@@ -318,7 +320,6 @@ class Atom: public Expr {
 public:
   virtual bool isLvalue() {return false;}
   virtual std::string getName() = 0;
-  virtual bool isArrayElement() {return false;}
   virtual void setPassByValue(bool b) {
     pass_by_value=b;
   }
@@ -397,7 +398,6 @@ public:
     pass_by_value=true;
   }
   ~ArrayElement() {delete atom; delete expr;}
-  bool isArrayElement() override {return true;}
   virtual void printOn(std::ostream &out) const override {
     out << "\n<ArrayElement>\n" << *atom << "\n" << *expr << "\n</ArrayElement>\n";
   }
@@ -424,15 +424,30 @@ public:
 
   virtual llvm::Value *compile() override {
     llvm::Value* array_index = expr->compile();
-    llvm::Value* v = lookupVal(blocks, getName());
-    if(!v) yyerror("Array not Found");
-    llvm::Value* array =
-      Builder.CreateLoad(v, getName().c_str());
+    llvm::Value *v, *array;
+    if(dynamic_cast<Id*>(atom) == nullptr) {
+      // In this case, the atom is not an Id (e.g: a[5]), instead
+      // it may be another ArrayElement (e.g. a[4][2]) or a function
+      // call (e.g. f(arr)[0]). So, we compile the atom to get the
+      // array.
+      array = atom->compile();
+    } else if(blocks.back()->isRef(getName())) {
+      // In this case, the atom is an Id (e.g: a[0]), and it is a
+      // function parameter that is passed by reference (e.g. ref int[] a).
+      v = Builder.CreateLoad(blocks.back()->getAddr(getName()));
+      array = Builder.CreateLoad(v, getName().c_str());
+    } else {
+      // In this case, the atom is an Id (e.g: a[0]), and it is a
+      // function parameter that is passed by value.
+      v = blocks.back()->getVal(getName());
+      array = Builder.CreateLoad(v, getName().c_str());
+    }
+
     llvm::Value* elem_ptr = Builder.CreateGEP(array, array_index);
     if (pass_by_value) {
-      
       // In this case, the ArrayElement is NOT used on the left side
-      // of an assignment, but on the right.
+      // of an assignment, but on the right. So, we return the loaded
+      // value of the element.
       return Builder.CreateLoad(elem_ptr, "elem");
     }
     return elem_ptr;
@@ -1259,25 +1274,25 @@ public:
   }
 
   llvm::Value* compile() override {
-    llvm::Type* LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
+    llvm::Type*  LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
     llvm::Value* value = expr->compile();
     llvm::Value* variable;
 
     // As opposed to variables, the address of an array ELEMENT cannot be
     // known beforehand (by looking at the RuntimeTable). So, we run
     // `ArrayElement.compile()` instead of just doing a lookup in the table.
-    if (atom->isArrayElement()) {
+    if (dynamic_cast<ArrayElement*>(atom) != nullptr) {
 
       // This will inform `ArrayElement.compile()` to return the address of
       // the element, not the actual value inside the element. This is
       // because we want to STORE the value of the right expression into
       // this element.
       atom->setPassByValue(false);
-      variable = atom->compile();    
+      variable = atom->compile();
       value = Builder.CreateBitCast(value, LLVMType);
       Builder.CreateStore(value, variable);
     } else {
-      //Normal Variable
+      // This is the case for regular variables.
       if(blocks.back()->isRef(atom->getName())) {
         auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
         value = Builder.CreateBitCast(value, LLVMType);
@@ -1604,78 +1619,47 @@ public:
   }
 
   llvm::Value* compile() override {
+    llvm::Function* llvm_function = scopes.getFun(name->getName());
     std::vector<llvm::Value*> compiled_params;
-    llvm::Function* called_function = scopes.getFun(name->getName());
-    std::vector<Expr *> parameters;
-    if (hasParams){
-      parameters = params->get_expr_list();
-    }
-    TonyType *called_function_type = name->get_type();
-    std::vector<TonyType *> currentScopeArgs = called_function_type->getArgs();
-    std::map<std::string, TonyType*> previousScopeArgs = called_function_type->getPreviousScopeArgs();
-
-    index = 0;
-    llvm::Value* v;
-    for(auto iter :currentScopeArgs){
-      if(iter->getPassMode == VAL)
-        // Pass by value
-        v = parameters[index]->compile();
-        compiled_params.push_back(v);
-
-        if (is_nil_constant(parameters[index]->get_type())) {
-          v = Builder.CreateBitCast(v, getOrCreateLLVMTypeFromTonyType(iter, iter->getPassMode()));
-        }
-
-        index++;
-        continue;
-      else{
-        // Pass by reference
-      }
+    std::vector<Expr*> parameter_exprs;
+    if (hasParams) {
+      parameter_exprs = params->get_expr_list();
     }
 
-    return nullptr;
     llvm::Value* v;
     int index = 0;
-    for (auto &Arg: called_function->args()){
-      if(!Arg.getType()->isPointerTy()){
-        // Case : Call by value or constants/ expressions
-        v = parameters[index]->compile();
-        if (is_nil_constant(parameters[index]->get_type())) {
-          v = Builder.CreateBitCast(v, Arg.getType());
+    for (auto &arg: llvm_function->args()) {
+      PassMode p = name->get_type()->get_function_args()[index]->getPassMode();
+      if(p == VAL) {
+        // In this case, the input argument 'arg' is passed BY VALUE in the
+        // function.
+        v = parameter_exprs[index]->compile();
+          
+        if (is_nil_constant(parameter_exprs[index]->get_type())) {
+          // If `nil` is passed as an input parameter, we must change
+          // its LLVM type (null pointer to an i32) to the type of the
+          // corresponding parameter in the function signature.
+          v = Builder.CreateBitCast(v, arg.getType());
         }
-        compiled_params.push_back(v);
-        index++;
-        continue;
-      }
+      } else {
+        // In this case, the input argument 'arg' is passed BY REFERENCE in the
+        // function.
 
-      // Case : Array Element
-      if (dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
-        ArrayElement* a = dynamic_cast<ArrayElement*>(parameters[index]);
-        a->setPassByValue(false);
-      }
-
-      // Case : List / Array Element
-      if(parameters[index]->get_type()->get_current_type() == TYPE_list  ||
-         parameters[index]->get_type()->get_current_type() == TYPE_array ||
-         dynamic_cast<ArrayElement*>(parameters[index]) != nullptr) {
-        v = parameters[index]->compile();
-        
-        if (is_nil_constant(parameters[index]->get_type())) {
-          v = Builder.CreateBitCast(v, Arg.getType());
+        ArrayElement* arr_elem = dynamic_cast<ArrayElement*>(parameter_exprs[index]);
+        if (arr_elem != nullptr) {
+          // Special case, if 'arg' is an array element, e.g: a[0].
+          arr_elem->setPassByValue(false);
+          v = arr_elem->compile();
+        } else {
+          // General case, where 'arg' is a variable
+          auto var = dynamic_cast<Id*> (parameter_exprs[index]);
+          v = blocks.back()->getAddr(var->getName());
         }
-        compiled_params.push_back(v);
-        index++;
-        continue;
       }
-
-      // Case : By reference values
-      auto var = dynamic_cast<Id*> (parameters[index]);
-      compiled_params.push_back(blocks.back()->getAddr(var->getName()));
+      compiled_params.push_back(v);
       index++;
-
-    }   
-
-    return Builder.CreateCall(called_function, compiled_params);
+    }
+    return Builder.CreateCall(llvm_function, compiled_params);
   }
 
   virtual std::string getName() override {
@@ -1864,17 +1848,18 @@ public:
     isMain = true;
   }
 
-  virtual llvm::Value *compile () override {
+  llvm::Value* compile() override {
 
-    RuntimeBlock *newBlock = new RuntimeBlock();
+    RuntimeBlock* newBlock = new RuntimeBlock();
     blocks.push_back(newBlock);
 
-    std::vector<TonyType *> argTypes = header->getArgs();
+    std::vector<TonyType*> argTypes = header->getArgs();
     std::vector<std::string> argNames = header->getNames();
-
-    for(int i=0; i<argTypes.size(); i++ ){
-      llvm::Type * translated = getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
-      blocks.back()->addArg(argNames[i], translated, argTypes[i]->getPassMode());
+    llvm::Type* argLLVMType;
+    for(int i=0; i<argTypes.size(); i++) {
+      argLLVMType =
+        getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
+      blocks.back()->addArg(argNames[i], argLLVMType, argTypes[i]->getPassMode());
     }
 
     //Getting previous scope vars, only gets strings which are not already included in function parameters
@@ -1917,23 +1902,18 @@ public:
     // Insert Parameters
     for (auto &arg: Fun->args()) {
       llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, arg.getName().str(), arg.getType());
-      if(blocks.back()->isRef(std::string(arg.getName())))
+      if(blocks.back()->isRef(std::string(arg.getName()))) {
         blocks.back()->addAddr(std::string(arg.getName()), Alloca);
-      else
+      } else {
         blocks.back()->addVal(std::string(arg.getName()), Alloca);
-      
+      }
       Builder.CreateStore(&arg, Alloca);
     }
-    /* 
-    for (auto it :previousVars){
-      llvm::AllocaInst * Alloca = CreateEntryBlockAlloca(Fun, it, blocks.back()->getVar(it));
-      blocks.back()->addAddr(it, Alloca);
-      blocks.back()->addVal(it, Alloca);
-    } */
+
     // Compile other definitions
     for(AST *a: local_definitions) a->compile();
     Builder.SetInsertPoint(BB);
-    
+
     body->compile();
     
     if (Fun->getReturnType()->isVoidTy()) {
