@@ -75,7 +75,7 @@ public:
     }
     
     TonyType * getScopeFunction(){
-        return functionType
+        return functionType;
     }
 private:
     std::map<std::string, SymbolEntry> locals;
@@ -127,6 +127,8 @@ public:
             if (l == T_VAR)         e = scopes.at(scopes.size() -2).lookupVar(c);
             else if (l == T_FUNC)   e = scopes.at(scopes.size() -2).lookupFunc(c);
             else                    e = scopes.at(scopes.size() -2).lookupBoth(c);
+            if (e!= nullptr) return e;
+            
         }
         return nullptr;
     }
@@ -141,7 +143,7 @@ public:
         scopes.back().setScopeFunction(f);
     }
     TonyType *getScopeFunction(){
-        scopes.back().getScopeFunction();
+       return scopes.back().getScopeFunction();
     }
 
     int getSizeOfCurrentScope() const {

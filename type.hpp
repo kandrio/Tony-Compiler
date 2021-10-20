@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <vector>
+#include <map>
 
 enum TypeBlock {TYPE_int, TYPE_bool, TYPE_char, TYPE_array, TYPE_list, TYPE_function, TYPE_void, TYPE_any};
 enum PassMode {VAL, REF};
@@ -83,11 +84,11 @@ public:
       return function_args;
     }
 
-    void addPreviousScopeArg (std::string arg){
-      previous_scope_args.push_back(arg);
+    void addPreviousScopeArg (std::string arg, TonyType *t){
+      previous_scope_args[arg] = t;
     }
 
-    std::vector<std::string> getPreviousScopeArg (){
+    std::map<std::string, TonyType*> getPreviousScopeArgs (){
       return previous_scope_args;
     }
 
@@ -105,7 +106,7 @@ protected:
     //For functions only
     TonyType *returnType;
     std::vector<TonyType *> function_args;
-    std::vector<std::string> previous_scope_args;
+    std::map<std::string, TonyType*> previous_scope_args;
     bool declDef;
 
     //For arrays only

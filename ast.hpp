@@ -359,8 +359,14 @@ public:
       yyerror("Variable \"%s\" not found!", var.c_str());
     } 
     type = e->type;
-    // For testing:
-    // std::cout << "I think i saw a variable: " << var << " with type " << type <<"!\n";
+
+    // Checking if var not in current scope, in order to save it for later;
+
+    if(type->get_current_type() != TYPE_function && st.lookupCurentScope(var, T_VAR) == nullptr){
+      TonyType *fun = st.getScopeFunction();
+      fun->addPreviousScopeArg(var, type);
+
+    }
   }
 
   virtual llvm::Value *compile() override {
@@ -1025,7 +1031,7 @@ public:
     id->insertIntoScope(T_FUNC);  
   }
 
-  // TODO: Mulptiple DEFINITIONS (not declarations)
+  
   void semHeaderDef() {
     // Get arguments if any
     if (formals) formals->sem();
@@ -1036,15 +1042,15 @@ public:
     }
     TonyType *fun;
     if (!isTyped){
-      fun = new TonyType(TYPE_function, nullptr, new TonyType(TYPE_void, nullptr), args, true);
+      fun = new TonyType(TYPE_function, nullptr, new TonyType(TYPE_void, nullptr), args, false);
     }else{
-      fun = new TonyType(TYPE_function, nullptr, type, args, true); 
+      fun = new TonyType(TYPE_function, nullptr, type, args, false); 
     }
-    id->set_type(fun);
-    st.setScopeFunction(fun);
-    
+        
     // Check if function is previously defined
     SymbolEntry *e = st.lookupParentScope(id->getName(), T_FUNC);
+    
+
     if(e != nullptr) {
       //Function either declared or defined
       TonyType *t = e->type;
@@ -1054,15 +1060,21 @@ public:
 
       if(!t->isDeclared()){
         //this means function is redefined
+        yyerror("Multiple definitions of function in the same scope!");
       }
 
+      // This means function was previously declared
       //TODO: TonyType check if the vars in declaration match the definition
       t->toggleDeclDef();
       if(!check_type_equality(t, fun)){
         yyerror("Function definition different from declaration");
       }
+      id->set_type(t);
+      st.setScopeFunction(t);
       return;
     }
+    id->set_type(fun);
+    st.setScopeFunction(fun);
 
 
     if(st.hasParentScope()){
@@ -1267,7 +1279,6 @@ public:
     } else {
       //Normal Variable
       if(blocks.back()->isRef(atom->getName())) {
-        std::cout << "hello\n";
         auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
         value = Builder.CreateBitCast(value, LLVMType);
         Builder.CreateStore(value, addr);
@@ -1595,17 +1606,43 @@ public:
   llvm::Value* compile() override {
     std::vector<llvm::Value*> compiled_params;
     llvm::Function* called_function = scopes.getFun(name->getName());
-    
     std::vector<Expr *> parameters;
     if (hasParams){
       parameters = params->get_expr_list();
     }
+    TonyType *called_function_type = name->get_type();
+    std::vector<TonyType *> currentScopeArgs = called_function_type->getArgs();
+    std::map<std::string, TonyType*> previousScopeArgs = called_function_type->getPreviousScopeArgs();
+
+    index = 0;
+    llvm::Value* v;
+    for(auto iter :currentScopeArgs){
+      if(iter->getPassMode == VAL)
+        // Pass by value
+        v = parameters[index]->compile();
+        compiled_params.push_back(v);
+
+        if (is_nil_constant(parameters[index]->get_type())) {
+          v = Builder.CreateBitCast(v, getOrCreateLLVMTypeFromTonyType(iter, iter->getPassMode()));
+        }
+
+        index++;
+        continue;
+      else{
+        // Pass by reference
+      }
+    }
+
+    return nullptr;
     llvm::Value* v;
     int index = 0;
     for (auto &Arg: called_function->args()){
       if(!Arg.getType()->isPointerTy()){
         // Case : Call by value or constants/ expressions
         v = parameters[index]->compile();
+        if (is_nil_constant(parameters[index]->get_type())) {
+          v = Builder.CreateBitCast(v, Arg.getType());
+        }
         compiled_params.push_back(v);
         index++;
         continue;
@@ -1790,10 +1827,10 @@ public:
     // Global Scope including functions first
     bool isFirstScope = false;
     if(!st.hasParentScope()){
-      std::cout << "I am here";
       isFirstScope = true;
       st.openScope(new TonyType(TYPE_void, nullptr));
       initFunctions();
+      st.openScope(new TonyType(TYPE_void, nullptr));
     }
     st.openScope(header->getType());
 
@@ -1806,12 +1843,20 @@ public:
     if(header->getIsTyped() && !st.getScopeHasReturn()){
       yyerror("No return value on typed function.");
     }
-    //st.printSymbolTable();
+
+    /* std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
+    std::cout << "Previous Scope vars: ";
+    for(auto it:previous){
+      std::cout << it.first << ", ";
+    }
+    std::cout << "\n"; */
+
     st.closeScope();
 
     //Closing Global Scope
     if(isFirstScope) {
       st.closeScope();
+    st.closeScope();
     }
   }
 
@@ -1833,15 +1878,19 @@ public:
     }
 
     //Getting previous scope vars, only gets strings which are not already included in function parameters
-/*     std::pair<std::vector<std::string>, std::vector<llvm::Type*>> previousVars = transferPrevBlockVariables(blocks);
-    std::vector<std::string> previousVarKeys = previousVars.first;
-    std::vector<llvm::Type *> previousVarTypes = previousVars.second;
-    for(int i=0; i<previousVarKeys.size(); ++i){
-      llvm::Type * t = getLLVMRefType(previousVarTypes[i]);
-      blocks.back()->addArg(previousVarKeys[i], t, REF);
-    } */
+    std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
+    for(auto it:previous){
+      std::string varname = it.first;
+      // First checking if it was already defined as a new function parameter
+      if(blocks.back()->containsVar(varname)) continue;
 
-    
+      // Translating type and inserting as a REF parameter
+      llvm::Type *translated = getOrCreateLLVMTypeFromTonyType(it.second, REF);
+      blocks.back()->addArg(varname, translated, REF);
+      argNames.push_back(varname);
+      argTypes.push_back(it.second);
+      
+    }
 
     // TODO: Here i should first check if func is declared
 

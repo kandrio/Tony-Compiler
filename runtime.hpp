@@ -173,7 +173,7 @@ public:
 private:
     std::vector<std::map<std::string, llvm::Function *>> functions;
     
-};
+};/* 
 
 static std::pair<std::vector<std::string>, std::vector<llvm::Type*>> transferPrevBlockVariables(std::vector<RuntimeBlock *> blocks){
     std::vector<std::string> newKeys;
@@ -193,7 +193,7 @@ static std::pair<std::vector<std::string>, std::vector<llvm::Type*>> transferPre
         //last->addVar(*it, getLLVMRefType1(secondLast->getVar(*it)), REF);
     }
     return std::make_pair(newKeys, types);
-}
+} */
 /* 
 
  static llvm::Type *lookupVar(std::vector<RuntimeBlock *> blocks, std::string name){
