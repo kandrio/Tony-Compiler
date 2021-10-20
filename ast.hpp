@@ -320,7 +320,6 @@ class Atom: public Expr {
 public:
   virtual bool isLvalue() {return false;}
   virtual std::string getName() = 0;
-  virtual bool isArrayElement() {return false;}
   virtual void setPassByValue(bool b) {
     pass_by_value=b;
   }
@@ -393,7 +392,6 @@ public:
     pass_by_value=true;
   }
   ~ArrayElement() {delete atom; delete expr;}
-  bool isArrayElement() override {return true;}
   virtual void printOn(std::ostream &out) const override {
     out << "\n<ArrayElement>\n" << *atom << "\n" << *expr << "\n</ArrayElement>\n";
   }
@@ -422,19 +420,28 @@ public:
     llvm::Value* array_index = expr->compile();
     llvm::Value *v, *array;
     if(dynamic_cast<Id*>(atom) == nullptr) {
+      // In this case, the atom is not an Id (e.g: a[5]), instead
+      // it may be another ArrayElement (e.g. a[4][2]) or a function
+      // call (e.g. f(arr)[0]). So, we compile the atom to get the
+      // array.
       array = atom->compile();
     } else if(blocks.back()->isRef(getName())) {
+      // In this case, the atom is an Id (e.g: a[0]), and it is a
+      // function parameter that is passed by reference (e.g. ref int[] a).
       v = Builder.CreateLoad(blocks.back()->getAddr(getName()));
       array = Builder.CreateLoad(v, getName().c_str());
     } else {
+      // In this case, the atom is an Id (e.g: a[0]), and it is a
+      // function parameter that is passed by value.
       v = blocks.back()->getVal(getName());
       array = Builder.CreateLoad(v, getName().c_str());
     }
-    
+
     llvm::Value* elem_ptr = Builder.CreateGEP(array, array_index);
     if (pass_by_value) {
       // In this case, the ArrayElement is NOT used on the left side
-      // of an assignment, but on the right.
+      // of an assignment, but on the right. So, we return the loaded
+      // value of the element.
       return Builder.CreateLoad(elem_ptr, "elem");
     }
     return elem_ptr;
@@ -1261,8 +1268,7 @@ public:
     // As opposed to variables, the address of an array ELEMENT cannot be
     // known beforehand (by looking at the RuntimeTable). So, we run
     // `ArrayElement.compile()` instead of just doing a lookup in the table.
-    if (atom->isArrayElement()) {
-      std::cout << "Left ArrayElement in Assignment\n";
+    if (dynamic_cast<ArrayElement*>(atom) != nullptr) {
 
       // This will inform `ArrayElement.compile()` to return the address of
       // the element, not the actual value inside the element. This is
@@ -1271,10 +1277,9 @@ public:
       atom->setPassByValue(false);
       variable = atom->compile();
       value = Builder.CreateBitCast(value, LLVMType);
-      std::cout << "Bitcast worked just fine\n";
       Builder.CreateStore(value, variable);
     } else {
-      //Normal Variable
+      // This is the case for regular variables.
       if(blocks.back()->isRef(atom->getName())) {
         auto addr = Builder.CreateLoad(blocks.back()->getAddr(atom->getName()));
         value = Builder.CreateBitCast(value, LLVMType);
@@ -1823,18 +1828,11 @@ public:
 
     std::vector<TonyType*> argTypes = header->getArgs();
     std::vector<std::string> argNames = header->getNames();
-    std::cout << "ARG NAMES in FUNC DEFINITION\n";
-    for (std::string x: argNames) {
-      std::cout << x << "\n";
-    } 
-    llvm::Type* LLVMType;
+    llvm::Type* argLLVMType;
     for(int i=0; i<argTypes.size(); i++) {
-      LLVMType =
+      argLLVMType =
         getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
-      blocks.back()->addArg(argNames[i], LLVMType, argTypes[i]->getPassMode());
-      if (!blocks.back()->getVar("y")) {
-        std::cout <<"arg just got in and now it doesnt exist\n";
-      }
+      blocks.back()->addArg(argNames[i], argLLVMType, argTypes[i]->getPassMode());
     }
 
     // TODO: Here i should first check if func is declared
