@@ -1,0 +1,26 @@
+def cancer ():
+   int[][] x
+   def arr(ref int[][] y):
+      int i, j
+      y := new int[][10]
+      for i:=0; i<10; i:=i+1:
+         y[i] := new int[10]
+      end
+
+      for i:=0; i<10; i:=i+1:
+         for j:=0; j<10; j:=j+1:
+            y[i][j] := i*j
+         end
+      end
+   end
+
+   int i, j
+   x := new int[][3]
+   for i:=0; i<3; i:=i+1:
+      x[i] := new int[3]
+   end
+
+   arr(x)
+   puti(x[6][7])
+
+end
