@@ -1622,9 +1622,7 @@ public:
     std::vector<Expr*> parameter_exprs;
     if (hasParams) {
       parameter_exprs = params->get_expr_list();
-    }
-
-    
+    }   
 
     std::vector<TonyType *> functionArgs = name->get_type()->get_function_args();
     std::map<std::string, TonyType*> previousScopeArgs = name->get_type()->getPreviousScopeArgs();
@@ -1639,19 +1637,15 @@ public:
         // In this case, the input argument 'arg' is passed BY VALUE in the
         // function.
         v = parameter_exprs[index]->compile();
-          
         if (is_nil_constant(parameter_exprs[index]->get_type())) {
           // If `nil` is passed as an input parameter, we must change
           // its LLVM type (null pointer to an i32) to the type of the
           // corresponding parameter in the function signature.
           v = Builder.CreateBitCast(v, arg->getType());
-          
-        }
-        
+        }       
       } else {
         // In this case, the input argument 'arg' is passed BY REFERENCE in the
         // function.
-
         ArrayElement* arr_elem = dynamic_cast<ArrayElement*>(parameter_exprs[index]);
         if (arr_elem != nullptr) {
           // Special case, if 'arg' is an array element, e.g: a[0].
@@ -1660,13 +1654,13 @@ public:
         } else {
           // General case, where 'arg' is a variable
           auto var = dynamic_cast<Id*> (parameter_exprs[index]);
-          if(var!=nullptr){
-            if(blocks.back()->isRef(var->getName())){
+          if(var != nullptr) {
+            if(blocks.back()->isRef(var->getName())) {
               v = Builder.CreateLoad(blocks.back()->getAddr(var->getName()));
-            }else{
-              v =  blocks.back()->getAddr(var->getName());
-            } 
-          }else{
+            } else {
+              v = blocks.back()->getVal(var->getName());
+            }
+          } else {
             v = parameter_exprs[index]->compile();
           }
         }
@@ -1682,7 +1676,7 @@ public:
       if(blocks.back()->isRef(par.first)){
         v = Builder.CreateLoad(blocks.back()->getAddr(par.first));
       }else{
-        v =  blocks.back()->getAddr(par.first);
+        v =  blocks.back()->getVal(par.first);
       } 
       /* 
       ArrayElement* arr_elem = dynamic_cast<ArrayElement*>(parameter_exprs[index]);
@@ -1697,7 +1691,7 @@ public:
         } */
         compiled_params.push_back(v);
         arg++;
-        index++;  
+        index++;
       }
 
     return Builder.CreateCall(llvm_function, compiled_params);
