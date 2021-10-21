@@ -366,12 +366,10 @@ public:
     if(type->get_current_type() != TYPE_function && st.lookupCurentScope(var, T_VAR) == nullptr){
       TonyType *fun = st.getScopeFunction();
       fun->addPreviousScopeArg(var, type);
-
     }
   }
 
   virtual llvm::Value *compile() override {
-
     if(!blocks.back()->isRef(var)){
       // By value variable
       llvm::Value *v = blocks.back()->getVal(var);
@@ -379,8 +377,7 @@ public:
       return Builder.CreateLoad(v);
     } else{
       // By reference variable
-      llvm::AllocaInst *alloca = blocks.back()->getAddr(var);
-      auto *addr = Builder.CreateLoad(alloca);
+      auto *addr = Builder.CreateLoad(blocks.back()->getAddr(var));
       return Builder.CreateLoad(addr);
     }
   } 
@@ -1055,6 +1052,7 @@ public:
     if (formals){
       args = formals->getArgs();
     }
+
     TonyType *fun;
     if (!isTyped){
       fun = new TonyType(TYPE_function, nullptr, new TonyType(TYPE_void, nullptr), args, false);
@@ -1607,7 +1605,7 @@ public:
       expressions[i]->sem();
       if(!check_type_equality(args[i],expressions[i]->get_type())){
         yyerror("Function call: Different argument type than expected");
-      }
+      }      
     }
     type = name->get_type()->get_return_type();
 
@@ -1626,10 +1624,17 @@ public:
       parameter_exprs = params->get_expr_list();
     }
 
+    
+
+    std::vector<TonyType *> functionArgs = name->get_type()->get_function_args();
+    std::map<std::string, TonyType*> previousScopeArgs = name->get_type()->getPreviousScopeArgs();
+
     llvm::Value* v;
     int index = 0;
-    for (auto &arg: llvm_function->args()) {
-      PassMode p = name->get_type()->get_function_args()[index]->getPassMode();
+    auto arg = llvm_function->arg_begin();
+
+    for (auto par: functionArgs) {
+      PassMode p = par->getPassMode();
       if(p == VAL) {
         // In this case, the input argument 'arg' is passed BY VALUE in the
         // function.
@@ -1639,8 +1644,10 @@ public:
           // If `nil` is passed as an input parameter, we must change
           // its LLVM type (null pointer to an i32) to the type of the
           // corresponding parameter in the function signature.
-          v = Builder.CreateBitCast(v, arg.getType());
+          v = Builder.CreateBitCast(v, arg->getType());
+          
         }
+        
       } else {
         // In this case, the input argument 'arg' is passed BY REFERENCE in the
         // function.
@@ -1653,12 +1660,46 @@ public:
         } else {
           // General case, where 'arg' is a variable
           auto var = dynamic_cast<Id*> (parameter_exprs[index]);
-          v = blocks.back()->getAddr(var->getName());
+          if(var!=nullptr){
+            if(blocks.back()->isRef(var->getName())){
+              v = Builder.CreateLoad(blocks.back()->getAddr(var->getName()));
+            }else{
+              v =  blocks.back()->getAddr(var->getName());
+            } 
+          }else{
+            v = parameter_exprs[index]->compile();
+          }
         }
       }
       compiled_params.push_back(v);
+      arg++;
       index++;
     }
+
+    // Iterating through previous Scope args (all references)
+    for (auto par: previousScopeArgs){
+
+      if(blocks.back()->isRef(par.first)){
+        v = Builder.CreateLoad(blocks.back()->getAddr(par.first));
+      }else{
+        v =  blocks.back()->getAddr(par.first);
+      } 
+      /* 
+      ArrayElement* arr_elem = dynamic_cast<ArrayElement*>(parameter_exprs[index]);
+        if (arr_elem != nullptr) {
+          // Special case, if 'arg' is an array element, e.g: a[0].
+          arr_elem->setPassByValue(false);
+          v = arr_elem->compile();
+        } else {
+          // General case, where 'arg' is a variable
+          auto var = dynamic_cast<Id*> (parameter_exprs[index]);
+          v = blocks.back()->getAddr(var->getName());
+        } */
+        compiled_params.push_back(v);
+        arg++;
+        index++;  
+      }
+
     return Builder.CreateCall(llvm_function, compiled_params);
   }
 
@@ -1816,6 +1857,7 @@ public:
       initFunctions();
       st.openScope(new TonyType(TYPE_void, nullptr));
     }
+    TonyType *prevFunctionType = st.getScopeFunction();
     st.openScope(header->getType());
 
     header->semHeaderDef();
@@ -1828,14 +1870,15 @@ public:
       yyerror("No return value on typed function.");
     }
 
-    /* std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
-    std::cout << "Previous Scope vars: ";
-    for(auto it:previous){
-      std::cout << it.first << ", ";
-    }
-    std::cout << "\n"; */
+    std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
 
+    // Transfering previous scope variables
     st.closeScope();
+   
+    for(auto it:previous){
+      if(st.lookupCurentScope(it.first, T_VAR) == nullptr)
+      prevFunctionType->addPreviousScopeArg(it.first, it.second);
+    }
 
     //Closing Global Scope
     if(isFirstScope) {
