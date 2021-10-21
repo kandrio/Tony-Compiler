@@ -1093,7 +1093,6 @@ public:
     if(st.hasParentScope()){
       id->insertIntoParentScope(T_FUNC);
     }
-    
   }
 
   bool getIsTyped(){
@@ -1715,17 +1714,56 @@ public:
 
   virtual void sem() override {
     header->semHeaderDecl();
+    SymbolEntry *e = st.lookupCurentScope(header->getName(), T_FUNC);
+    if(e != nullptr){
+      functionType = e->type;
+    }else{
+      yyerror("Fatal error: Couldn't find function declaration.");
+    }
   }
 
   // Not implemented yet
   virtual llvm::Value *compile() override {
+    RuntimeBlock* newBlock = new RuntimeBlock();
+    blocks.push_back(newBlock);
 
-    //llvm::Function *fun = header->compile();
-    return nullptr;
+    std::vector<TonyType*> argTypes = header->getArgs();
+    std::vector<std::string> argNames = header->getNames();
+    llvm::Type* argLLVMType;
+    for(int i=0; i<argTypes.size(); i++) {
+      argLLVMType =
+        getOrCreateLLVMTypeFromTonyType(argTypes[i], argTypes[i]->getPassMode());
+      blocks.back()->addArg(argNames[i], argLLVMType, argTypes[i]->getPassMode());
+    }
+
+    //Getting previous scope vars, only gets strings which are not already included in function parameters
+    std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
+    for(auto it:previous){
+      std::string varname = it.first;
+      // First checking if it was already defined as a new function parameter
+      if(blocks.back()->containsVar(varname)) continue;
+
+      // Translating type and inserting as a REF parameter
+      llvm::Type *translated = getOrCreateLLVMTypeFromTonyType(it.second, REF);
+      blocks.back()->addArg(varname, translated, REF);
+      argNames.push_back(varname);
+      argTypes.push_back(it.second);
+    }
+
+    llvm::FunctionType *FT =
+      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(header->getType(), header->getType()->getPassMode()),
+                              blocks.back()->getArgs(), false);
+
+    llvm::Function *Fun = llvm::Function::Create(FT,llvm::Function::ExternalLinkage, header->getName(), TheModule.get());
+    blocks.back()->setFun(Fun);
+    scopes.insertFunc(header->getName(), Fun);
+    blocks.pop_back();
+    return Fun;  
   } 
 
 private:
   Header *header;
+  TonyType *functionType;
 };
 
 class FunctionDefinition: public AST {
@@ -1885,8 +1923,15 @@ public:
 
   llvm::Value* compile() override {
 
+
     RuntimeBlock* newBlock = new RuntimeBlock();
     blocks.push_back(newBlock);
+
+
+    bool isDeclared = false;
+    llvm::Function *Fun = scopes.getFunCurrentScope(header->getName());
+
+    bool isDeclared = Fun != nullptr;
 
     std::vector<TonyType*> argTypes = header->getArgs();
     std::vector<std::string> argNames = header->getNames();
@@ -1909,19 +1954,22 @@ public:
       blocks.back()->addArg(varname, translated, REF);
       argNames.push_back(varname);
       argTypes.push_back(it.second);
-      
     }
 
     // TODO: Here i should first check if func is declared
 
-    llvm::FunctionType *FT =
-      llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(header->getType(), header->getType()->getPassMode()),
-                              blocks.back()->getArgs(), false);
 
-    llvm::Function *Fun = llvm::Function::Create(FT,llvm::Function::ExternalLinkage, header->getName(), TheModule.get());
+    if(!isDeclared){
+      llvm::FunctionType *FT =
+        llvm::FunctionType::get(getOrCreateLLVMTypeFromTonyType(header->getType(), header->getType()->getPassMode()),
+                                blocks.back()->getArgs(), false);
+
+      Fun = llvm::Function::Create(FT,llvm::Function::ExternalLinkage, header->getName(), TheModule.get());
+    }
     blocks.back()->setFun(Fun);
-    scopes.insertFunc(header->getName(), Fun);
 
+    // This will overwrite declared function
+    scopes.insertFunc(header->getName(), Fun);
     scopes.openRuntimeScope();
 
     int index = 0;

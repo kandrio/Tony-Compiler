@@ -46,16 +46,31 @@ public:
     }
 
     // TODO: Implement this for all types
-    int get_data_size_of_type() {
-      /* Return the size (in Bytes) of an object that has this type. */
+    std::string toString() {
       switch(current_type) {
-        case TYPE_int: return 4;
-        case TYPE_char: return 1;
-        case TYPE_bool: return 1;
-        case TYPE_array: return size*(nested_type->get_data_size_of_type());
-        case TYPE_list: return 8;
-        case TYPE_any: return 4;
-        default: return 0;
+        case TYPE_int: return "int";
+        case TYPE_char: return "char";
+        case TYPE_bool: return "bool";
+        case TYPE_array: return "array";
+        case TYPE_list: return "list";
+        case TYPE_any: return "any";
+        case TYPE_function: return "function";
+        case TYPE_void: return "void";
+        default: return "unknown";
+      }
+    }
+    
+    int get_data_size_of_type(){
+      /* Return the size (in Bytes) of an object that has this type. */
+      
+      switch(current_type) {
+      case TYPE_int: return 4;
+      case TYPE_char: return 1;
+      case TYPE_bool: return 1;
+      case TYPE_array: return size*(nested_type->get_data_size_of_type());
+      case TYPE_list: return 8;
+      case TYPE_any: return 4;
+      default: return 0;
       }
     }
 

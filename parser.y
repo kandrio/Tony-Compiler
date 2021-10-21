@@ -284,6 +284,6 @@ int main(int argc, char **argv){
         yyerror("Input file couldnn't be opened");
     }
     yyin = pt;
-    yyparse();    
+    yyparse();
     fclose(pt);
 }
