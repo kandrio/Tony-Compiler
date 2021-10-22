@@ -11,14 +11,14 @@ default: tony
 lexer.cpp: lexer.l
 	flex -s -o lexer.cpp lexer.l
 
-lexer.o: lexer.cpp lexer.hpp parser.hpp
+lexer.o: lexer.cpp lexer.hpp parser.hpp error.hpp
 
 parser.hpp parser.cpp: parser.y
 	bison -dv -o parser.cpp parser.y
 
-parser.o: parser.cpp lexer.hpp
+parser.o: parser.cpp lexer.hpp error.hpp
 
-tony: lexer.o parser.o ast.o semantic.o
+tony: lexer.o parser.o ast.o semantic.o error.o
 	$(CXX) $(CXXFLAGS) -o tony type.cpp $^ $(LDFLAGS)
 
 clean:

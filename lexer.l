@@ -5,6 +5,7 @@
 #include "ast.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "error.hpp"
 
 int comment_counter = 0;
 int linecount=1;
@@ -99,19 +100,13 @@ P [\x20-\x7e]
 {W}+                    {/* nothing */ }
 \n			                {linecount++;}
 
-.                       {yyerror("Lexer error: Unexpected token at line %d", linecount); exit (1);}
+.                       {error(linecount, "Lexer error: Unexpected token %s", yytext);}
 
 %%
 
 //TODO: Fix to add lines
 void yyerror(const char *msg, ...) {
-  va_list argptr;
-  fprintf(stderr, "Error: ");
-  va_start(argptr, msg);
-  vfprintf(stderr, msg, argptr);
-  va_end(argptr);
-  fprintf(stderr, "\n");
-  exit(1);
+  error(yylineno, msg);
 }
 
 char fixSingleChar(char *str){ 
@@ -131,7 +126,7 @@ char fixSingleChar(char *str){
     case '\"': return '\"';
     case 'x': str++; x =  (char) strtol(str, NULL, 16); return x; break;
     default : 
-      yyerror("Lexer error: Unexpected token at line %d", linecount); 
+      error(linecount, "Lexer error: Unexpected token"); 
       return '\0';
       break;
   }

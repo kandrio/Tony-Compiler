@@ -4,13 +4,20 @@
 #include "ast.hpp"
 #include "lexer.hpp"
 #include "symbol.hpp"
+#include "error.hpp"
 
 extern FILE *yyin;
 SymbolTable st;
 LLVMListTypes llvm_list_types;
 
-std::map<std::string, llvm::Function*> GLOBAL_FUNCTIONS;
+AST *root;
+char *filename;
+
 %}
+
+%locations
+%code requires {extern int yylineno;}
+%define parse.error verbose
 
 %token T_and      "and"
 %token T_bool     "bool"
@@ -81,6 +88,7 @@ std::map<std::string, llvm::Function*> GLOBAL_FUNCTIONS;
 %token<name> T_string    
 %token<c> T_singlechar  
 
+%type<funcdef> Program
 %type<funcdef> Func_def
 %type<funcdef> Func_def_dec
 %type<funcdecl> Func_Decl
@@ -109,13 +117,8 @@ std::map<std::string, llvm::Function*> GLOBAL_FUNCTIONS;
 
 Program:
     Func_def {
-        //std::cout << *$1;
         $1->setIsMain();
-        $1->sem();
-        std::cout << "Semantic analysis done!\n";
-        $1->llvm_compile_and_dump();
-        delete $1;
-        
+        root = $$;
     }
 ;
 
@@ -279,11 +282,19 @@ int main(int argc, char **argv){
     if(argc < 2){
         yyerror("No input file provided");
     }
-    FILE *pt = fopen(argv[1], "r" );
+    filename = argv[1];
+    FILE *pt = fopen(filename, "r" );
     if(pt==nullptr){
         yyerror("Input file couldnn't be opened");
     }
     yyin = pt;
-    yyparse();
+    int result = yyparse();
+    if(result!=0){
+        yyerror("Parsing Failed!");
+    }
+
+    root->sem();
+    root->llvm_compile_and_dump();
+    delete root;
     fclose(pt);
 }
