@@ -13,6 +13,7 @@
 #include "symbol.hpp"
 #include "runtime.hpp"
 #include "type.hpp"
+#include "error.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
@@ -168,7 +169,12 @@ public:
   }
   
   virtual llvm::Value *compile() = 0;
+  virtual void setLineno(int n){
+    lineno = n;
+  }
 protected:
+
+  int lineno;
   
   static llvm::LLVMContext TheContext;
   static llvm::IRBuilder<> Builder;
@@ -270,6 +276,8 @@ protected:
     llvm::IRBuilder<> TmpB(&TheFunction->getEntryBlock(), TheFunction->getEntryBlock().begin());
     return TmpB.CreateAlloca(Ty, 0, VarName.c_str());
   }
+
+
 };
 
 inline std::ostream& operator<< (std::ostream &out, const AST &t) {
@@ -1344,6 +1352,10 @@ public:
   virtual bool isLvalue() override {
     return false;
   }
+  
+  void setLineno(int n) override{
+    lineno = n;
+  }
 
   llvm::Value* compile() override {
     llvm::Function* llvm_function = scopes.getFun(name->getName());
@@ -1422,6 +1434,7 @@ private:
   Id *name;
   ExprList *params;
   bool hasParams;
+  int lineno;
 };
 
 class FunctionDeclaration: public AST {

@@ -1,0 +1,7 @@
+def main():
+   decl int function1()
+   def function1 ():
+      skip
+   end
+   skip
+end

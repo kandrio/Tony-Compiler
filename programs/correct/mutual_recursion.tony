@@ -1,0 +1,25 @@
+def mutual_recursion ():
+   decl bool even(int n)
+   def  bool odd (int n):
+      if (n = 1):
+         return true
+      else:
+         return even(n-1)
+      end   
+   end
+
+   def  bool even (int n):
+      if (n = 1):
+         return false
+      else:
+         return odd(n-1)
+      end
+   end
+
+   if (even(42)) :
+      puts("42")
+   else:
+      puts("WRONG dummy")
+   end
+
+end

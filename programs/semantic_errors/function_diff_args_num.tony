@@ -1,0 +1,7 @@
+def main():
+   def int fun(int x, y):
+      x:=2
+      return 2
+   end
+   fun(2, 3, 'c')
+end

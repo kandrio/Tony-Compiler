@@ -1,0 +1,6 @@
+def main():
+   def int fun(int x, y; char z, h):
+      x:=2
+   end
+   fun(2, 3, 2, 'c')
+end

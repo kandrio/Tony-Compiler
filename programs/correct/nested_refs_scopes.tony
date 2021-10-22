@@ -1,0 +1,14 @@
+def scope ():
+   int y
+   def hello(ref int x1):
+      def nested(ref int z):
+         z:= 42
+      end
+      nested(x1)
+   end
+   y := 0
+   hello(y)
+   puti(y)
+
+   % should output 4217
+end

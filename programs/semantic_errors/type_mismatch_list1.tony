@@ -1,0 +1,5 @@
+def main():
+   int x
+   char z
+   x := 1 # x
+end

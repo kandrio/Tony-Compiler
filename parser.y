@@ -123,44 +123,44 @@ Program:
 ;
 
 Func_def:
-    "def" Header ':' Func_def_dec  Stmt_Body "end" {$4->merge($2, $5); $4->reverse(); $$ = $4;}
+    "def" Header ':' Func_def_dec  Stmt_Body "end" {$4->merge($2, $5); $4->reverse(); $$ = $4; $$->setLineno(yylineno);}
 ;
 
 Func_def_dec:
-    Func_def Func_def_dec   {$2->append($1); $$ = $2;}
-|   Func_Decl Func_def_dec  {$2->append($1); $$ = $2;}
-|   Var_Def Func_def_dec    {$2->append($1); $$ = $2;}
-|   /*ε*/                   {$$ = new FunctionDefinition();}
+    Func_def Func_def_dec   {$2->append($1); $$ = $2; }
+|   Func_Decl Func_def_dec  {$2->append($1); $$ = $2; }
+|   Var_Def Func_def_dec    {$2->append($1); $$ = $2; }
+|   /*ε*/                   {$$ = new FunctionDefinition(); $$->setLineno(yylineno);}
 ;
 
 Header:
-    Type T_id '(' ')'               {$$ = new Header($1, new Id(std::string($2)), NULL);}
-|   Type T_id '(' Formal Par ')'    {$5->append($4); $5->reverse(); $$ = new Header($1, new Id(std::string($2)), $5);}
-|   T_id '('')'                     {$$ = new Header(new Id(std::string($1)),  NULL);}
-|   T_id '(' Formal Par ')'         {$4->append($3); $4->reverse(); $$ = new Header(new Id(std::string($1)), $4);}
+    Type T_id '(' ')'               {$$ = new Header($1, new Id(std::string($2)), NULL); $$->setLineno(yylineno);}
+|   Type T_id '(' Formal Par ')'    {$5->append($4); $5->reverse(); $$ = new Header($1, new Id(std::string($2)), $5); $$->setLineno(yylineno);}
+|   T_id '('')'                     {$$ = new Header(new Id(std::string($1)),  NULL); $$->setLineno(yylineno);}
+|   T_id '(' Formal Par ')'         {$4->append($3); $4->reverse(); $$ = new Header(new Id(std::string($1)), $4); $$->setLineno(yylineno);}
 ;
 
 Func_Decl:
-    "decl" Header   {$$ = new FunctionDeclaration($2);}
+    "decl" Header   {$$ = new FunctionDeclaration($2); $$->setLineno(yylineno);}
 ;
 
 Par:   
     ';' Formal Par  {$3->append($2); $$ = $3;}
-|   /*e*/           {$$ = new FormalList();}
+|   /*e*/           {$$ = new FormalList(); $$->setLineno(yylineno);}
 ;
 
 Formal:
-    "ref" Var_Def   {$$ = new Formal($2, true);}
-|   Var_Def         {$$ = new Formal($1, false);}
+    "ref" Var_Def   {$$ = new Formal($2, true); $$->setLineno(yylineno); }
+|   Var_Def         {$$ = new Formal($1, false); $$->setLineno(yylineno);}
 ;
 
 Var_Def: 
-    Type T_id Var_Comma    {$3->append(new Id(std::string($2))); $3->set_type($1); $3->reverse(); $$ = $3;}
+    Type T_id Var_Comma    {$3->append(new Id(std::string($2))); $3->set_type($1); $3->reverse(); $$ = $3; $$->setLineno(yylineno);}
 ;
 
 Var_Comma:
-    /*e*/                  {$$ = new VarList();}
-|   ',' T_id Var_Comma {}  {$3->append(new Id(std::string($2))); $$ = $3;}
+    /*e*/                  {$$ = new VarList(); $$->setLineno(yylineno);}
+|   ',' T_id Var_Comma {}  {$3->append(new Id(std::string($2))); $$ = $3; $$->setLineno(yylineno);}
 ;
 
 Type:
@@ -172,11 +172,11 @@ Type:
 ;
 
 Stmt:
-    Simple          {$$ = $1;}  
-|   "exit"          {$$ = new Exit();}
-|   "return" Expr   {$$ = new Return($2);}
-|   If_Clause       {$$=$1;}
-|   For_Clause      {$$=$1;}
+    Simple          {$$ = $1; $$->setLineno(yylineno);}  
+|   "exit"          {$$ = new Exit(); $$->setLineno(yylineno);}
+|   "return" Expr   {$$ = new Return($2); $$->setLineno(yylineno);}
+|   If_Clause       {$$=$1; $$->setLineno(yylineno);}
+|   For_Clause      {$$=$1; $$->setLineno(yylineno);}
 ;
 
 Stmt_Body: 
@@ -185,11 +185,11 @@ Stmt_Body:
 
 Stmt_Full:   
     Stmt Stmt_Full  {$2->append($1); $$ = $2;}
-|   /*e*/           {$$ = new StmtBody();}
+|   /*e*/           {$$ = new StmtBody(); $$->setLineno(yylineno);}
 ; 
 
 If_Clause:
-    "if" Expr ':' Stmt_Body Elsif_Clause "end" {$$ = new If($2, $4, $5);}
+    "if" Expr ':' Stmt_Body Elsif_Clause "end" {$$ = new If($2, $4, $5); $$->setLineno(yylineno);}
 ;
 
 Elsif_Clause: 
@@ -203,13 +203,13 @@ Else_Clause:
 ;
 
 For_Clause: 
-    "for" Simple_List ';' Expr ';' Simple_List ':' Stmt_Body "end" {$$ = new For($2, $4, $6, $8);}
+    "for" Simple_List ';' Expr ';' Simple_List ':' Stmt_Body "end" {$$ = new For($2, $4, $6, $8); $$->setLineno(yylineno);}
 ;
 
 Simple:
-    "skip"           {$$ = new Skip();}
-|   Atom ":=" Expr   {$$ = new Assign($1, $3);}  
-|   Call             {$$ = $1;}
+    "skip"           {$$ = new Skip(); $$->setLineno(yylineno);}
+|   Atom ":=" Expr   {$$ = new Assign($1, $3); $$->setLineno(yylineno);}   
+|   Call             {$$ = $1; $$->setLineno(yylineno);}
 ;
 
 Simple_List: 
@@ -220,13 +220,13 @@ Simple_List:
 Το SimpleList() κατασκευάζει μια κενή λίστα από Simples η οποία
 θα γίνει append. */
 Simple_Comma:
-    /*ε*/                    {$$ = new SimpleList();}
+    /*ε*/                    {$$ = new SimpleList(); $$->setLineno(yylineno);}
 |   ',' Simple Simple_Comma  {$3->append($2); $$ = $3;}
 ;
 
 Call:
-    T_id  '(' ')'           {$$ = new FunctionCall(new Id(std::string($1)));}
-|   T_id  '(' Expr_List ')' {$$ = new FunctionCall(new Id(std::string($1)), $3);}
+    T_id  '(' ')'           {$$ = new FunctionCall(new Id(std::string($1))); $$->setLineno(yylineno);}
+|   T_id  '(' Expr_List ')' {$$ = new FunctionCall(new Id(std::string($1)), $3); $$->setLineno(yylineno);}
 ;
 
 Expr_List: 
@@ -234,46 +234,46 @@ Expr_List:
 ;
 
 Expr_Comma:
-    /*ε*/               {$$ = new ExprList();}
+    /*ε*/               {$$ = new ExprList(); $$->setLineno(yylineno);}
 |   ',' Expr Expr_Comma {$3->append($2); $$ = $3;}
 ;
 
 Atom:
-    T_id                {$$ = new Id(std::string($1));}
-|   T_string            {$$ = new StringLiteral(std::string($1));}
-|   Atom '[' Expr ']'   {$$ = new ArrayElement($1, $3);}
+    T_id                {$$ = new Id(std::string($1)); $$->setLineno(yylineno);}
+|   T_string            {$$ = new StringLiteral(std::string($1)); $$->setLineno(yylineno);}
+|   Atom '[' Expr ']'   {$$ = new ArrayElement($1, $3); $$->setLineno(yylineno);}
 |   Call                {$$ = $1;}
 ;
 
 Expr:
     Atom               {$$ = $1;}       
-    |   T_const        {$$ = new IntConst($1);}
-    |   T_singlechar   {$$ = new CharConst($1);}
+    |   T_const        {$$ = new IntConst($1); $$->setLineno(yylineno);}
+    |   T_singlechar   {$$ = new CharConst($1); $$->setLineno(yylineno);}
     |   '(' Expr ')'   {$$ = $2;}
-    |   '+' Expr   %prec UPLUS  {$$ = new UnOp(std::string("+"), $2);}
-    |   '-' Expr   %prec UMINUS {$$ = new UnOp(std::string("-"), $2);}
-    |   "nil?" '(' Expr ')'     {$$ = new UnOp(std::string("nil?"), $3);}
-    |   "head" '(' Expr ')'     {$$ = new UnOp(std::string("head"), $3);}
-    |   "tail" '(' Expr ')'     {$$ = new UnOp(std::string("tail"), $3);}
-    |   "not" Expr              {$$ = new UnOp(std::string("not"), $2);}
-    |   Expr '+' Expr    {$$ = new BinOp($1, std::string("+"), $3);}
-    |   Expr '-' Expr    {$$ = new BinOp($1, std::string("-"), $3);}
-    |   Expr '*' Expr    {$$ = new BinOp($1, std::string("*"), $3);}
-    |   Expr '/' Expr    {$$ = new BinOp($1, std::string("/"), $3);}
-    |   Expr "mod" Expr  {$$ = new BinOp($1, std::string("mod"), $3);}
-    |   Expr '=' Expr    {$$ = new BinOp($1, std::string("="), $3);}
-    |   Expr "<>" Expr   {$$ = new BinOp($1, std::string("<>"), $3);}
-    |   Expr '<' Expr    {$$ = new BinOp($1, std::string("<"), $3);}
-    |   Expr '>' Expr    {$$ = new BinOp($1, std::string(">"), $3);}
-    |   Expr "<=" Expr   {$$ = new BinOp($1, std::string("<="), $3);}
-    |   Expr ">=" Expr   {$$ = new BinOp($1, std::string(">="), $3);}
-    |   Expr "and" Expr  {$$ = new BinOp($1, std::string("and"), $3);}
-    |   Expr "or" Expr   {$$ = new BinOp($1, std::string("or"), $3);}
-    |   Expr '#' Expr    {$$ = new BinOp($1, std::string("#"), $3);}
-    |   "true"           {$$ = new Boolean(std::string("true"));}
-    |   "false"          {$$ = new Boolean(std::string("false"));}
-    |   "new" Type '[' Expr ']' {$$ = new New($2, $4);}
-    |   "nil"                   {$$ = new Nil();}
+    |   '+' Expr   %prec UPLUS  {$$ = new UnOp(std::string("+"), $2); $$->setLineno(yylineno);}
+    |   '-' Expr   %prec UMINUS {$$ = new UnOp(std::string("-"), $2); $$->setLineno(yylineno);}
+    |   "nil?" '(' Expr ')'     {$$ = new UnOp(std::string("nil?"), $3); $$->setLineno(yylineno);}
+    |   "head" '(' Expr ')'     {$$ = new UnOp(std::string("head"), $3); $$->setLineno(yylineno);}
+    |   "tail" '(' Expr ')'     {$$ = new UnOp(std::string("tail"), $3); $$->setLineno(yylineno);}
+    |   "not" Expr              {$$ = new UnOp(std::string("not"), $2); $$->setLineno(yylineno);}
+    |   Expr '+' Expr    {$$ = new BinOp($1, std::string("+"), $3); $$->setLineno(yylineno);}
+    |   Expr '-' Expr    {$$ = new BinOp($1, std::string("-"), $3);$$->setLineno(yylineno);}
+    |   Expr '*' Expr    {$$ = new BinOp($1, std::string("*"), $3);$$->setLineno(yylineno);}
+    |   Expr '/' Expr    {$$ = new BinOp($1, std::string("/"), $3); $$->setLineno(yylineno);}
+    |   Expr "mod" Expr  {$$ = new BinOp($1, std::string("mod"), $3); $$->setLineno(yylineno);}
+    |   Expr '=' Expr    {$$ = new BinOp($1, std::string("="), $3); $$->setLineno(yylineno);}
+    |   Expr "<>" Expr   {$$ = new BinOp($1, std::string("<>"), $3); $$->setLineno(yylineno);}
+    |   Expr '<' Expr    {$$ = new BinOp($1, std::string("<"), $3); $$->setLineno(yylineno);}
+    |   Expr '>' Expr    {$$ = new BinOp($1, std::string(">"), $3); $$->setLineno(yylineno);}
+    |   Expr "<=" Expr   {$$ = new BinOp($1, std::string("<="), $3); $$->setLineno(yylineno);}
+    |   Expr ">=" Expr   {$$ = new BinOp($1, std::string(">="), $3); $$->setLineno(yylineno);}
+    |   Expr "and" Expr  {$$ = new BinOp($1, std::string("and"), $3); $$->setLineno(yylineno);}
+    |   Expr "or" Expr   {$$ = new BinOp($1, std::string("or"), $3); $$->setLineno(yylineno);}
+    |   Expr '#' Expr    {$$ = new BinOp($1, std::string("#"), $3); $$->setLineno(yylineno);}
+    |   "true"           {$$ = new Boolean(std::string("true")); $$->setLineno(yylineno);}
+    |   "false"          {$$ = new Boolean(std::string("false")); $$->setLineno(yylineno);}
+    |   "new" Type '[' Expr ']' {$$ = new New($2, $4); $$->setLineno(yylineno);}
+    |   "nil"                   {$$ = new Nil(); $$->setLineno(yylineno);}
 ;
 
 %%

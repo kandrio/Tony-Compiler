@@ -1,0 +1,4 @@
+def main():
+   bool x
+   x := not 1
+end

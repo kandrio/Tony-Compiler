@@ -3,7 +3,7 @@
 void Id::sem() {
     SymbolEntry *e = st.lookup(var, T_BOTH);
     if(e == nullptr) {
-        yyerror("Variable \"%s\" not found!", var.c_str());
+        error(lineno, "Unknown variable \"%s\".", var.c_str());
     } 
     type = e->type;
 
@@ -18,11 +18,11 @@ void Id::sem() {
 void ArrayElement::sem(){
     atom->sem();
     if(atom->get_type()->get_current_type()!=TYPE_array){
-        yyerror("Accessing array value of non-array object.");
+        error(lineno, "Accessing array value of non-array object of type \"%s\".", atom->get_type()->toString().c_str());
     }
     expr->sem();
     if(expr->get_type()->get_current_type() != TYPE_int){
-        yyerror("Index of an array must be an integer.");
+        error(lineno, "Index of an array must be an integer, received a \"%s\" instead.", expr->get_type()->toString().c_str());
     }
 
     type = atom->get_type()->get_nested_type();
@@ -43,7 +43,7 @@ void IntConst::sem(){
 void New::sem(){
     expr->sem();
     if(expr->get_type()->get_current_type() != TYPE_int){
-        yyerror("Array size must be an integer.");
+        error(lineno, "Array size must be an integer, received \"%s\" instead", expr->get_type()->toString().c_str());
     }
     type = new TonyType(TYPE_array, type_of_elems);
 }
@@ -58,21 +58,28 @@ void Boolean::sem(){
 
 void BinOp::sem(){
     if (op == "+" || op == "-" || op == "*" || op == "/" || op == "mod") {
-        if (!left->type_check(TYPE_int) || !right->type_check(TYPE_int)) {
+        left->sem();
+        right->sem();
+        if (left->get_type()->get_current_type() != (TYPE_int) || right->get_type()->get_current_type() != (TYPE_int)) {
         // TODO: We must be more specific in our errors. This is temporary.
-        yyerror("TonyType mismatch. Both expressions must be of type 'int'.\n");
+        error(lineno, "Type mismatch: Expected \"int\" and \"int\", received \"%s\" and \"%s\" instead.",
+              left->get_type()->toString().c_str(), right->get_type()->toString().c_str()  );
         }
         type = new TonyType(TYPE_int, nullptr);
     } else if (op == "=" || op == "<>" || op == "<" || op == ">" || op == "<=" || op == ">=") {
         left->sem();
         right->sem();
         if (!check_type_equality(left->get_type(), right->get_type())) {
-        yyerror("TonyType mismatch. Expressions must have the same type.\n");
+        error(lineno, "Type mismatch: Expected same types, received \"%s\" and \"%s\" instead.",
+               left->get_type()->toString().c_str(), right->get_type()->toString().c_str());
         }
         type = new TonyType(TYPE_bool, nullptr);
     } else if (op == "and" || op == "or") {
-        if (!left->type_check(TYPE_bool) || !right->type_check(TYPE_bool)) {
-        yyerror("TonyType mismatch. Both expressions must be of type 'bool'.\n");
+        left->sem();
+        right->sem();
+        if (left->get_type()->get_current_type() != (TYPE_bool) || right->get_type()->get_current_type() != (TYPE_bool)) {
+        error(lineno, "Type mismatch: Expected \"bool\" and \"bool\", received \"%s\" and \"%s\" instead.",
+              left->get_type()->toString().c_str(), right->get_type()->toString().c_str()  );
         }
         type = new TonyType(TYPE_bool, nullptr);
     } else if (op == "#") {
@@ -80,31 +87,30 @@ void BinOp::sem(){
         right->sem();
 
         if (right->get_type()->get_current_type() != TYPE_list) {
-        yyerror("TonyType mismatch. Expression on the right of '#' operator \
-                must be a list.\n");
+        error(lineno, "Type mismatch: Expected type \"list\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
 
         if (right->get_type()->get_nested_type() != nullptr && 
             !check_type_equality(left->get_type(), right->get_type()->get_nested_type())) {
-        yyerror("TonyType mismatch. Expression on the left of '#' operator \
-                must be have the same type as the elements of the list on the right \
-                of the operator.\n");
+        error(lineno, "Type mismatch: Expression on the left of '#' operator must be have the same type as the elements of the list on the right of the operator.");
         }
         type = new TonyType(TYPE_list, left->get_type());
     } else {
-        yyerror("Wrong binary operator.\n");
+        error(lineno, "Wrong binary operator.");
     }
 }
 
 void UnOp::sem(){
     if (op == "+" || op == "-") {
-        if (!right->type_check(TYPE_int)) {
-        yyerror("TonyType mismatch. Expression must be of type 'int'.");
+        right->sem();
+        if (right->get_type()->get_current_type() != TYPE_int) {
+        error(lineno, "Type mismatch: Expected type \"int\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
         type = new TonyType(TYPE_int, nullptr);
     } else if (op == "not") { 
-        if (!right->type_check(TYPE_bool)) {
-        yyerror("TonyType mismatch. Expression must be of type 'bool'.");
+        right->sem();
+        if (right->get_type()->get_current_type() != TYPE_bool){
+        error(lineno, "Type mismatch: Expected type \"bool\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
         type = new TonyType(TYPE_bool, nullptr);
     } else if (op == "head") {
@@ -113,11 +119,11 @@ void UnOp::sem(){
         TonyType *operand_type = right->get_type();
         // Check that the expression is a list.
         if (operand_type->get_current_type() != TYPE_list) {
-        yyerror("TonyType mismatch. Expression after 'head' must be a list.");
+            error(lineno, "Type mismatch: Expected type \"list\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
         // Check that the expression is not the 'nil' constant (empty list).
         if (is_nil_constant(operand_type)) {
-        yyerror("TonyType mismatch. Expression after 'head' cannot be a 'nil' list.");
+            error(lineno, "Type mismatch: Expression after 'head' cannot be a 'nil' list.");
         }
         // The nested type of the expression is actually the type of the list's elements.
         // NOTE: Maybe we should create a new type here, that is a copy of: 
@@ -130,11 +136,11 @@ void UnOp::sem(){
         TonyType *operand_type = right->get_type();
         // Check that the expression is a list.
         if (operand_type->get_current_type() != TYPE_list) {
-        yyerror("TonyType mismatch. Expression after 'tail' must be a list.");
+            error(lineno, "Type mismatch: Expected type \"list\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
         // Check that the expression is not the 'nil' constant (empty list).
         if (is_nil_constant(operand_type)) {
-        yyerror("TonyType mismatch. Expression after 'tail' cannot be a 'nil' list.");
+            error(lineno, "Type mismatch: Expression after 'tail' cannot be a 'nil' list.");
         }
         // The type of the expression is the type of the tail.
         type = operand_type; 
@@ -143,7 +149,7 @@ void UnOp::sem(){
         right->sem();
         TonyType *operand_type = right->get_type();
         if(operand_type->get_current_type() != TYPE_list) {
-        yyerror("TonyType mismatch. Expression after 'nil?' must be a list.");
+            error(lineno, "Type mismatch: Expected type \"list\", received \"%s\" instead.", right->get_type()->toString().c_str());
         }
         type = new TonyType(TYPE_bool, nullptr); 
     }
@@ -205,19 +211,19 @@ void Header::semHeaderDef(){
         //Function either declared or defined
         TonyType *t = e->type;
         if(t->get_current_type()!= TYPE_function){
-        yyerror("Expected type function.");
+            error(lineno, "Found declared function that is not type function.");
         }
 
         if(!t->isDeclared()){
         //this means function is redefined
-        yyerror("Multiple definitions of function in the same scope!");
+            error(lineno, "Multiple definitions of function \"%s()\" in the same scope.", getName().c_str());
         }
 
         // This means function was previously declared
         //TODO: TonyType check if the vars in declaration match the definition
         t->toggleDeclDef();
         if(!check_type_equality(t, fun)){
-        yyerror("Function definition different from declaration");
+            error(lineno, "Definition of function \"%s\" different from declaration.");
         }
         id->set_type(t);
         st.setScopeFunction(t);
@@ -235,15 +241,16 @@ void Header::semHeaderDef(){
 void Return::sem(){
     ret_expr->sem();
     if(!check_type_equality(ret_expr->get_type(), st.getCurrentScopeReturnType())){
-        yyerror("Return type different than the one declared.");
-        }
+        error(lineno, "Return type mismatch: Expected type \"%s\", received \"%s\" instead.",
+        ret_expr->get_type()->toString().c_str(), st.getCurrentScopeReturnType()->toString().c_str());
+    }
     st.setScopeHasReturn();
 }
 
 void Exit::sem(){
     TonyType *t = st.getCurrentScopeReturnType();
     if(t->get_current_type() != TYPE_void){
-        yyerror("Found 'exit' statement in a typed function.");
+        error(lineno, "Found 'exit' statement in a typed function.");
     }
 }
 
@@ -255,11 +262,13 @@ void StmtBody::sem(){
 
 void Assign::sem() {
     atom->sem();
-    if (!expr->type_check(atom->get_type())) {
-        yyerror("Atom on the left and expression on the right should have the same type during assignment.");
+    expr->sem();
+    if (!check_type_equality(expr->get_type(), atom->get_type())) {
+        error(lineno, "Assignment type mismatch: Cannot assign type \"%s\" to type \"%s\".",
+        expr->get_type()->toString().c_str(), atom->get_type()->toString().c_str());
     }
     if(!atom->isLvalue()){
-        yyerror("Atom is not a valid l-value.");
+        error(lineno, "Atom is not a valid l-value.");
     }   
 }
 
@@ -268,8 +277,11 @@ void Skip::sem(){
 }
 
 void If::sem(){
-    if(condition != nullptr && !condition->type_check(TYPE_bool)) {
-        yyerror("TonyType mismatch. 'If-condition' is not boolean.");
+
+    if(condition != nullptr) {
+        condition->sem();
+        if(condition->get_type()->get_current_type() != TYPE_bool)
+            error(lineno, "Type mismatch : Expected condition type \"bool\", received \"%s\" instead.", condition->get_type()->toString().c_str());
         }
     stmt_body->sem();
     if(next_if != nullptr) next_if->sem();
@@ -285,7 +297,8 @@ void For::sem(){
     initializations->sem();
     condition->sem();
     if(condition->get_type()->get_current_type() != TYPE_bool){
-        yyerror("For condition is not boolean.");
+        if(condition->get_type()->get_current_type() != TYPE_bool)
+            error(lineno, "Type mismatch : Expected condition type \"bool\", received \"%s\" instead.", condition->get_type()->toString().c_str());
     }
     steps->sem();
     stmt_body->sem();
@@ -299,7 +312,8 @@ void FunctionCall::sem(){
     name->sem();
 
     if (name->get_type()->get_current_type() != TYPE_function)
-        yyerror("Function call, expected a function");
+        error(lineno, "Function call, expected a function for name \"%s\", received a \"%s\" instead.",
+        name->getName().c_str(), name->get_type()->toString().c_str());
     std::vector<TonyType *> args = name->get_type()->get_function_args();
     std::vector<Expr*> expressions;
     if (hasParams){
@@ -307,16 +321,27 @@ void FunctionCall::sem(){
     }
 
     if(expressions.size() != args.size()){
-        yyerror("Function call: Different number of arguments than expected");
+        error(lineno, "Function call: Exptected %d arguments, received %d", args.size(), expressions.size() );
     }
 
     for (int i=0; i<(int) args.size();++i){
         expressions[i]->sem();
         if(!check_type_equality(args[i],expressions[i]->get_type())){
-        yyerror("Function call: Different argument type than expected");
+            error(lineno, "Function call: Expected type \"%s\" for positional argument %d, received \"%s\" instead",
+            args[i]->toString().c_str(), i+1, expressions[i]->get_type()->toString().c_str());
         }      
     }
     type = name->get_type()->get_return_type();
+
+    std::map<std::string, TonyType*> previous = name->get_type()->getPreviousScopeArgs();
+    
+
+    TonyType *fun = st.getScopeFunction();
+    for(auto it:previous){
+        if(st.lookupCurentScope(it.first, T_VAR) == nullptr)
+            fun->addPreviousScopeArg(it.first, it.second);
+    }
+
 }
 
 void FunctionDeclaration::sem(){
@@ -325,7 +350,7 @@ void FunctionDeclaration::sem(){
     if(e != nullptr){
         functionType = e->type;
     }else{
-        yyerror("Fatal error: Couldn't find function declaration.");
+        error(lineno, "Couldn't find function declaration for function \"%s\"", header->getName().c_str());
     }
 }
 
@@ -348,7 +373,7 @@ void FunctionDefinition::sem(){
     for (AST *a : local_definitions) a->sem();
     body->sem();
     if(header->getIsTyped() && !st.getScopeHasReturn()){
-        yyerror("No return value on typed function.");
+        error(lineno, "No return value on typed function.");
     }
 
     std::map<std::string, TonyType*> previous = functionType->getPreviousScopeArgs();
@@ -360,6 +385,14 @@ void FunctionDefinition::sem(){
         if(st.lookupCurentScope(it.first, T_VAR) == nullptr)
         prevFunctionType->addPreviousScopeArg(it.first, it.second);
     }
+/* 
+    std::cout << "\n=============================================\nI am function << \"" << header->getName() << "()\" and these are my previous scope variables : ";
+    for(auto it:previous){
+        std::cout << it.first << ", ";
+    }
+
+    std::cout << "\n=============================================\n";
+ */
 
     //Closing Global Scope
     if(isFirstScope) {

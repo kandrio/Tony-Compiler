@@ -1,0 +1,4 @@
+def main():
+   int x
+   x()
+end
