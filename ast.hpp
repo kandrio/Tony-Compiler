@@ -708,8 +708,7 @@ public:
       llvm::Type* LLVMTypeOfElement =
         getOrCreateLLVMTypeFromTonyType(type->get_nested_type());
 
-      // 8 bytes are used for the pointer to the next element
-      int size = left->get_type()->get_data_size_of_type() + 8;
+      int size = left->get_type()->get_data_size_of_type();
       llvm::Value *p = Builder.CreateCall(TheMalloc, {c32(size)}, "newtmp");
       llvm::Value *n = Builder.CreateBitCast(p, LLVMType, "nodetmp");
       llvm::Value *h = Builder.CreateStructGEP(n, 0, "headptr");

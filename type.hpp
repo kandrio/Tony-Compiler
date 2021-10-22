@@ -52,8 +52,8 @@ public:
         case TYPE_int: return 4;
         case TYPE_char: return 1;
         case TYPE_bool: return 1;
-        case TYPE_array: return size*(nested_type->get_data_size_of_type());
-        case TYPE_list: return 8;
+        case TYPE_array: return 8;
+        case TYPE_list: return 8 + nested_type->get_data_size_of_type();
         case TYPE_any: return 4;
         default: return 0;
       }
