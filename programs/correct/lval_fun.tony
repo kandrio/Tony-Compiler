@@ -1,0 +1,47 @@
+def main():
+
+  int[][] a
+  int i, j
+
+  def int[][] f(ref int[][] x):
+    int[][] u
+    int i
+
+    u := new int[] [10]
+    for i := 0 ; i < 10 ; i := i + 1:
+      u[i] := new int[10]
+      u[i][5] := 42 + i
+    end
+    x := u
+    x[0][0] := 4242
+    return u
+  end
+
+  def int[][] g(int[][] x):
+    int[][] u
+    int i
+
+    u := new int[] [10]
+    for i := 0 ; i < 10 ; i := i + 1:
+      u[i] := new int[10]
+      for j := 0 ; j < 10 ; j := j + 1:
+        u[i][j] := x[i][j] + 1
+      end
+    end
+    x := u
+    x[9][0] := 4242
+    return u
+  end
+
+  a := new int[] [10]
+  for i := 0 ; i < 10 ; i := i + 1:
+    a[i] := new int[10]
+    for j := 0 ; j < 10 ; j := j + 1:
+      a[i][j] := i + j
+    end
+  end
+
+  f(a)[0][g(a)[0][0]] := 42
+  puti(a[0][1])
+
+end
