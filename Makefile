@@ -18,7 +18,7 @@ parser.hpp parser.cpp: parser.y
 
 parser.o: parser.cpp lexer.hpp
 
-tony: lexer.o parser.o ast.o
+tony: lexer.o parser.o ast.o semantic.o
 	$(CXX) $(CXXFLAGS) -o tony type.cpp $^ $(LDFLAGS)
 
 clean:

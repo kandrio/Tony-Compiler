@@ -169,6 +169,16 @@ public:
         return nullptr;
     }
 
+    llvm::Function* getFunCurrentScope(std::string name){
+        for (auto i = functions.rbegin(); i!= functions.rend(); i++){
+            if( (*i).find(name) != (*i).end() ){
+                return (*i)[name];
+            }
+            return nullptr;
+        }
+        return nullptr;
+    }
+ 
 private:
     std::vector<std::map<std::string, llvm::Function *>> functions;
     
