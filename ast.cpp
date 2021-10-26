@@ -4,6 +4,7 @@ llvm::LLVMContext AST::TheContext;
 llvm::IRBuilder<> AST::Builder(TheContext);
 llvm::GlobalVariable *AST::TheVars;
 std::unique_ptr<llvm::Module> AST::TheModule;
+std::unique_ptr<llvm::legacy::FunctionPassManager> AST::TheFPM;
 
 llvm::Function *AST::TheMalloc;
 

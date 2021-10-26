@@ -279,22 +279,29 @@ Expr:
 %%
 
 int main(int argc, char **argv){
-    if(argc < 2){
-        yyerror("No input file provided");
+    bool optimization = false;
+    for(int i=1; i<argc; i++){
+        if(std::string(argv[i]) == std::string("-O")){
+            optimization = true;
+        }
+        else{
+            filename = argv[i];
+            FILE * pt = fopen(filename, "r" );
+            if(pt==nullptr){
+                yyerror("Input file couldnn't be opened.");
+            }
+            yyin = pt;
+        }
     }
-    filename = argv[1];
-    FILE *pt = fopen(filename, "r" );
-    if(pt==nullptr){
-        yyerror("Input file couldnn't be opened");
-    }
-    yyin = pt;
+
     int result = yyparse();
     if(result!=0){
         yyerror("Parsing Failed!");
     }
 
     root->sem();
-    root->llvm_compile_and_dump();
+    root->llvm_compile_and_dump(optimization);
     delete root;
-    fclose(pt);
+    fclose(yyin);
+    return 0;
 }

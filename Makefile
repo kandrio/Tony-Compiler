@@ -6,7 +6,7 @@ CXX=clang++-10
 CXXFLAGS=-Wall -std=c++11 -g `$(LLVMCONFIG) --cxxflags`
 LDFLAGS=`$(LLVMCONFIG) --ldflags --system-libs --libs all`
 
-default: tony
+default: tonyc
 
 lexer.cpp: lexer.l
 	flex -s -o lexer.cpp lexer.l
@@ -18,11 +18,11 @@ parser.hpp parser.cpp: parser.y
 
 parser.o: parser.cpp lexer.hpp error.hpp
 
-tony: lexer.o parser.o ast.o semantic.o error.o
-	$(CXX) $(CXXFLAGS) -o tony type.cpp $^ $(LDFLAGS)
+tonyc: lexer.o parser.o ast.o semantic.o error.o
+	$(CXX) $(CXXFLAGS) -o tonyc type.cpp $^ $(LDFLAGS)
 
 clean:
-	$(RM) lexer.cpp parser.cpp parser.hpp parser.output *.o *.ll tony lextest *.hpp.gch
+	$(RM) lexer.cpp parser.cpp parser.hpp parser.output *.o *.hpp.gch
 
 distclean: clean
-	$(RM) tony lextest
+	$(RM) *.ll *.asm

@@ -34,8 +34,6 @@
 #include <llvm/Transforms/Scalar/GVN.h>
 #include <llvm/Transforms/Utils.h>
 
-
-
 void yyerror(const char *msg, ...);
 
 bool check_type_equality(TonyType* type1, TonyType* type2);
@@ -47,19 +45,10 @@ public:
   virtual void printOn(std::ostream &out) const = 0;
   virtual void sem() {}; // NOTE: After we implement `sem()` for all the subclasses
                          // it would make sense to make this: `virtual void sem() = 0`.
-  void llvm_compile_and_dump(){
+  void llvm_compile_and_dump(bool optimize){
     // Initialize    
     TheModule = std::make_unique<llvm::Module>("tony program", TheContext);
 
-    /* TheFPM = make_unique<legacy::FunctionPassManager>(TheModule.get());
-    if (optimize) {
-      TheFPM->add(createPromoteMemoryToRegisterPass());
-      TheFPM->add(createInstructionCombiningPass());
-      TheFPM->add(createReassociatePass());
-      TheFPM->add(createGVNPass());
-      TheFPM->add(createCFGSimplificationPass());
-    }
-    TheFPM->doInitialization(); */
     i1 = llvm::IntegerType::get(TheContext, 1);
     i8 = llvm::IntegerType::get(TheContext, 8);
     i32 = llvm::IntegerType::get(TheContext, 32);
@@ -104,10 +93,32 @@ public:
       TheModule->print(llvm::errs(), nullptr);
       std::exit(1);
     }
+
+    if(optimize){
+      optimizeModule();
+    }
+
     std::error_code EC;
-  
-    llvm::raw_ostream *out = new llvm::raw_fd_ostream("out.ll", EC);
-    TheModule->print(*out, nullptr);
+
+    llvm::raw_ostream *out2 = new llvm::raw_fd_ostream("out.ll", EC);
+    TheModule->print(*out2, nullptr);
+  }
+
+  void optimizeModule(){
+
+    TheFPM = std::make_unique<llvm::legacy::FunctionPassManager>(TheModule.get());
+    if (true) {
+      TheFPM->add(llvm::createPromoteMemoryToRegisterPass());
+      TheFPM->add(llvm::createInstructionCombiningPass());
+      TheFPM->add(llvm::createReassociatePass());
+      TheFPM->add(llvm::createGVNPass());
+      TheFPM->add(llvm::createCFGSimplificationPass());
+    }
+    TheFPM->doInitialization();
+
+    for (auto &F: *TheModule)
+      TheFPM->run(F);
+
   }
 
   void initializeLibraryFunctions(){
@@ -181,6 +192,7 @@ protected:
   static llvm::GlobalVariable *TheVars;
   static std::unique_ptr<llvm::Module> TheModule;
   static llvm::Function *TheMalloc;
+  static std::unique_ptr<llvm::legacy::FunctionPassManager> TheFPM;
 
   static llvm::Type *i1;
   static llvm::Type *i8;
@@ -1637,6 +1649,7 @@ public:
     if(!isMain)
       Builder.SetInsertPoint(blocks.back()->getCurrentBasicBlock());
     llvm::verifyFunction(*Fun, &llvm::errs());
+
     return Fun;
   } 
 private:
