@@ -298,7 +298,6 @@ int main(int argc, char **argv){
     if(result!=0){
         yyerror("Parsing Failed!");
     }
-
     root->sem();
     root->llvm_compile_and_dump(optimization);
     delete root;

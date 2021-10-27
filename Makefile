@@ -18,11 +18,11 @@ parser.hpp parser.cpp: parser.y
 
 parser.o: parser.cpp lexer.hpp error.hpp
 
-tonyc: lexer.o parser.o ast.o semantic.o error.o
+tonyc: lexer.o parser.o ast.o semantic.o error.o parsing.o
 	$(CXX) $(CXXFLAGS) -o tonyc type.cpp $^ $(LDFLAGS)
 
 clean:
 	$(RM) lexer.cpp parser.cpp parser.hpp parser.output *.o *.hpp.gch
 
 distclean: clean
-	$(RM) *.ll *.asm
+	$(RM) *.ll *.asm tonyc

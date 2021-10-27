@@ -42,7 +42,7 @@ bool is_nil_constant(TonyType *type);
 class AST {
 public:
   virtual ~AST() {}
-  virtual void printOn(std::ostream &out) const = 0;
+  virtual void printOn(std::ostream &out) {};
   virtual void sem() {}; // NOTE: After we implement `sem()` for all the subclasses
                          // it would make sense to make this: `virtual void sem() = 0`.
   void llvm_compile_and_dump(bool optimize){
@@ -66,8 +66,8 @@ public:
     
     // Global Scope
     scopes.openRuntimeScope();
-    
     initializeLibraryFunctions();
+    scopes.openRuntimeScope();
     
     
     //Create "dummy main function" which calls the first program function
@@ -85,6 +85,7 @@ public:
     Builder.CreateRet(c32(0));
 
     // Close Program Scope
+    scopes.closeRuntimeScope();
     scopes.closeRuntimeScope();
 
     bool bad = llvm::verifyModule(*TheModule, &llvm::errs());
@@ -292,7 +293,7 @@ protected:
 
 };
 
-inline std::ostream& operator<< (std::ostream &out, const AST &t) {
+inline std::ostream& operator<< (std::ostream &out, AST &t) {
   t.printOn(out);
   return out;
 }
@@ -352,9 +353,7 @@ class Id: public Atom {
 public:
   Id(std::string v): var(v) {}
   ~Id() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<Id name=\"" << var << "\"> ";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   void set_type(TonyType* t){
     type = t;
@@ -374,7 +373,7 @@ public:
 
   virtual void sem() override; 
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     if(!blocks.back()->isRef(var)){
       // By value variable
       llvm::Value *v = blocks.back()->getVal(var);
@@ -400,20 +399,18 @@ public:
     pass_by_value=true;
   }
   ~ArrayElement() {delete atom; delete expr;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<ArrayElement>\n" << *atom << "\n" << *expr << "\n</ArrayElement>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual bool isLvalue() override {
+  virtual bool isLvalue() override{
     return true;
   }
 
-  virtual std::string getName() override {
+  virtual std::string getName() override{
     return atom->getName();
   }
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     llvm::Value* array_index = expr->compile();
     llvm::Value *v, *array;
     if(dynamic_cast<Id*>(atom) == nullptr) {
@@ -490,21 +487,18 @@ public:
     strlit = strlit.substr(0, j);
   }
   ~StringLiteral () {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<String value=\"" << strlit << "\"> ";
-  }
-
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual bool isLvalue() override {
+  virtual bool isLvalue() override{
     return false;
   }
 
-  virtual std::string getName() override {
+  virtual std::string getName() override{
     return strlit;
   }
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     llvm::Value* p =
       Builder.CreateCall(TheMalloc, c32(strlit.length()+1), "strlitaddr");
     p = Builder.CreateBitCast(p, getOrCreateLLVMTypeFromTonyType(type));
@@ -525,12 +519,10 @@ class CharConst: public Expr {
 public:
   CharConst(unsigned char c): char_const(c) {}
   ~CharConst() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<CharConst value='"<< char_const << "\' ascii="<< (int) char_const << "> ";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     return c8(char_const);
   } 
 private:
@@ -541,12 +533,10 @@ class IntConst: public Expr {
 public:
   IntConst(int n): num(n) {}
   ~IntConst() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<IntConst value=" << num << "> ";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile () override {
+  virtual llvm::Value *compile () override{
     return c32(num);
   } 
 private:
@@ -557,13 +547,11 @@ class New: public Expr {
 public:
   New(TonyType *t, Expr *right): type_of_elems(t), expr(right) {}
   ~New() {delete type_of_elems; delete expr;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<New> " << type_of_elems << *expr << "</New> ";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     llvm::Value* e = expr->compile();
     llvm::Value* size =
       Builder.CreateMul(e, c32(type_of_elems->get_data_size_of_type()),
@@ -585,11 +573,9 @@ class Nil: public Expr {
 public:
   Nil() {}
   ~Nil() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<Nil> ";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     return llvm::ConstantPointerNull::get(llvm::Type::getInt32Ty(TheContext)->getPointerTo());
   }
 };
@@ -601,12 +587,10 @@ public:
     else b=false;
   }
   ~Boolean() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "<Boolean value=" << boolean_value << "> ";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     return c1(b);
   } 
 private:
@@ -618,9 +602,7 @@ class BinOp: public Expr {
 public:
   BinOp(Expr *l, std::string o, Expr *r): left(l), op(o), right(r) {}
   ~BinOp() { delete left; delete right; }
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Binop op=\"" << op << "\">\n" << *left << *right << "\n</BinOp>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
   virtual llvm::Value *compile() override{
@@ -671,12 +653,10 @@ class UnOp: public Expr {
 public:
   UnOp(std::string(o), Expr *r): op(o), right(r) {}
   ~UnOp() { delete right; }
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<UnOp op=\"" << op << "\">\n" << *right << "\n</UnOp>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     llvm::Value *r = right->compile();
 
     if (op == "+")     return r;
@@ -741,18 +721,10 @@ public:
     type = t;
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<VarList>\n";
-    out << type;
-    for (Id * i : ids) {
-      out << *i;
-    }
-    out << "\n</VarList>\n";
-  }
-  
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     llvm::Type* t = getOrCreateLLVMTypeFromTonyType(type);
     for (Id * id: ids) {
       // TODO: PASSMODE
@@ -791,9 +763,7 @@ class Formal: public AST {
 public:
   Formal(VarList* v, bool i): var_list(v), is_ref(i) {}
   ~Formal() {delete var_list;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Formal isRef=\"" << (is_ref ? "yes" : "no") << "\">\n" << *var_list << "</Formal>";
-  }
+  virtual void printOn(std::ostream &out) override;
   
   virtual void sem() override;
 
@@ -806,7 +776,7 @@ public:
   }
 
   // Not implemented yet
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     return nullptr;
   }
 private:
@@ -829,19 +799,11 @@ public:
     std::reverse(formals.begin(), formals.end());
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<FormalList>\n";
-
-    for (Formal * f : formals) {
-      out << *f;
-    }
-    out << "\n</FormalList>\n";
-  }
-
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
   // Not implemented yet
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     return nullptr;
   } 
 
@@ -879,21 +841,7 @@ public:
   Header(Id *name, FormalList *f): formals(f), id(name), isTyped(false) {type = new TonyType(TYPE_void, nullptr);}
   ~Header(){ delete formals; delete id;}
   virtual void sem() override;
-  virtual void printOn(std::ostream &out) const override {
-    out << "<Header>\n"; 
-    if(!isTyped) {
-      out << "<NoType>";
-    } else {
-      out << type;
-    }
-    out << *id; 
-    if(!formals) {
-      out << "<NoFormalList>";
-    } else {
-      out << *formals;
-    }
-    out << "\n</Header>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   TonyType *getType() {return type;}
 
@@ -911,7 +859,7 @@ public:
     return id->getName();
   }
 
-  virtual llvm::Function *compile() override {
+  virtual llvm::Function *compile() override{
     
     llvm::Twine name = llvm::Twine(id->getName());
     std::vector<TonyType *> args;
@@ -963,13 +911,11 @@ class Return: public Stmt{
 public:
   Return(Expr* e): ret_expr(e) {}
   ~Return() {delete ret_expr;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Return>\n" << *ret_expr << "\n</Return>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
 
     llvm::Value* v = ret_expr->compile();
 
@@ -989,13 +935,11 @@ private:
 class Exit: public Stmt{
 public:
   Exit() {}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Exit>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
-  llvm::Value* compile() override {return Builder.CreateRetVoid();}
+  llvm::Value* compile() override{return Builder.CreateRetVoid();}
 };
 
 class StmtBody: public AST {
@@ -1019,16 +963,10 @@ public:
     std::reverse(stmts.begin(), stmts.end());
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<StmtBody>\n";
-    for (Stmt *s : stmts) {
-      out << *s;
-    }
-    out << "\n</StmtBody>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     for (Stmt *s : stmts) {
       s->compile();
       if (dynamic_cast<Return*>(s) != nullptr) {
@@ -1058,12 +996,10 @@ class Assign: public Simple {
 public:
   Assign(Atom *a, Expr *e): atom(a), expr(e) {}
   ~Assign() {delete atom; delete expr;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Assign>\n" << *atom << *expr << "\n</Assign>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  llvm::Value* compile() override {
+  llvm::Value* compile() override{
     llvm::Type*  LLVMType = getOrCreateLLVMTypeFromTonyType(atom->get_type());
     llvm::Value* value = expr->compile();
     llvm::Value* variable;
@@ -1105,11 +1041,9 @@ public:
   Skip() {}
   ~Skip() {}
   
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<Skip>\n";
-  }
-  // Not implemented yet
-  virtual llvm::Value *compile() override {
+  virtual void printOn(std::ostream &out) override;
+
+  virtual llvm::Value *compile() override{
     return nullptr;
   } 
 
@@ -1137,20 +1071,14 @@ public:
     return condition == nullptr;
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<If>\n"; 
-    if (condition != nullptr) out << *condition;
-    out << *stmt_body;
-    if (next_if != nullptr) out << *next_if;
-    out << "\n</If>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
   // TODO: Currently we create a `MergeBB` for each `if`/`elisf`/`else`
   // statement. This works but it isn't correct. We must have only one
   // `MergeBB` for the whole `if`-`then`-`else` statement.
-  llvm::Value* compile() override {
+  llvm::Value* compile() override{
     // IMPORTANT: We don't create a new basic block for this statement yet.
     // The condition check for an `if` statement remains in the same
     // basic block as statements before the `if`. BUT, later, we will start
@@ -1234,20 +1162,14 @@ public:
     std::reverse(simples.begin(), simples.end());
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<SimplesList>\n";
-    for (Simple *s : simples) {
-      out << *s;
-    }
-    out << "\n</SimpleList>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
   std::vector<Simple *> get_simples_list(){
     return simples;
   }
 
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     for (auto s: simples){
       s->compile();
     }
@@ -1268,13 +1190,11 @@ public:
     delete stmt_body;
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<For>\n" << *initializations << *condition << *steps  << *stmt_body << "\n</For>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     initializations->compile();
 
     // Creating new BB for header after current block
@@ -1323,22 +1243,16 @@ public:
     std::reverse(expressions.begin(), expressions.end());
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<ExprList>\n";
-    for (Expr *e : expressions) {
-      out << *e;
-    }
-    out << "\n</ExprList>\n";
-  }
+  virtual void printOn(std::ostream &out) override;
 
   std::vector<Expr*> get_expr_list(){
     return expressions;
   }
 
-  virtual void sem() override ;
+  virtual void sem() override;
 
   // This DOESN'T need to be implemented.
-  virtual llvm::Value* compile() override {
+  virtual llvm::Value* compile() override{
     return nullptr;
   }
 
@@ -1351,16 +1265,10 @@ public:
   FunctionCall(Id *n): name(n), hasParams(false) {}
   FunctionCall(Id *n, ExprList *el): name(n), params(el), hasParams(true) {}
   ~FunctionCall() {delete name; if (hasParams) delete params;}
-  virtual void printOn(std::ostream &out) const override {
-    if(!hasParams)
-      out << "\n<FunctionCall>\n" << *name << "\n</FunctionCall>\n";
-    else
-      out << "\n<FunctionCall>\n" << *name << *params << "\n</FunctionCall>\n";
-  }
-
+  virtual void printOn(std::ostream &out) override;
   virtual void sem() override;
 
-  virtual bool isLvalue() override {
+  virtual bool isLvalue() override{
     return false;
   }
   
@@ -1368,7 +1276,7 @@ public:
     lineno = n;
   }
 
-  llvm::Value* compile() override {
+  llvm::Value* compile() override{
     llvm::Function* llvm_function = scopes.getFun(name->getName());
     std::vector<llvm::Value*> compiled_params;
     std::vector<Expr*> parameter_exprs;
@@ -1437,7 +1345,7 @@ public:
     return Builder.CreateCall(llvm_function, compiled_params);
   }
 
-  virtual std::string getName() override {
+  virtual std::string getName() override{
     return name->getName();
   }
 
@@ -1452,14 +1360,12 @@ class FunctionDeclaration: public AST {
 public:
   FunctionDeclaration(Header *hd): header(hd){}
   ~FunctionDeclaration() {delete header;}
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<FunctionDeclaration>\n" << *header << "\n</FunctionDeclaration>\n" ;
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
   // Not implemented yet
-  virtual llvm::Value *compile() override {
+  virtual llvm::Value *compile() override{
     RuntimeBlock* newBlock = new RuntimeBlock();
     blocks.push_back(newBlock);
 
@@ -1529,13 +1435,7 @@ public:
     std::reverse(local_definitions.begin(), local_definitions.end());
   }
 
-  virtual void printOn(std::ostream &out) const override {
-    out << "\n<FunctionDefinition>\n" << *header; 
-    
-    for (AST *a : local_definitions) out << *a;
-
-    out << *body << "\n</FunctionDefinition>\n" ;
-  }
+  virtual void printOn(std::ostream &out) override;
 
   virtual void sem() override;
 
@@ -1543,7 +1443,7 @@ public:
     isMain = true;
   }
 
-  llvm::Value* compile() override {
+  llvm::Value* compile() override{
 
 
     RuntimeBlock* newBlock = new RuntimeBlock();
@@ -1551,9 +1451,11 @@ public:
 
 
     llvm::Function *Fun = scopes.getFunCurrentScope(header->getName());
+    bool isDeclared = (Fun != nullptr);
 
-    bool isDeclared = Fun != nullptr;
+    
 
+    
     std::vector<TonyType*> argTypes = header->getArgs();
     std::vector<std::string> argNames = header->getNames();
     llvm::Type* argLLVMType;
@@ -1587,17 +1489,20 @@ public:
 
       Fun = llvm::Function::Create(FT,llvm::Function::ExternalLinkage, header->getName(), TheModule.get());
     }
+
+
+
     blocks.back()->setFun(Fun);
 
     // This will overwrite declared function
     scopes.insertFunc(header->getName(), Fun);
     scopes.openRuntimeScope();
-
+        
     int index = 0;
     for(auto &Arg: Fun->args()){
       Arg.setName(argNames[index++]);
     }
-
+  
     // CREATE Basic Block
     llvm::BasicBlock *BB = llvm::BasicBlock::Create(TheContext, "entry", Fun);
     Builder.SetInsertPoint(BB);    
