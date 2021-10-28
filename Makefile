@@ -33,6 +33,3 @@ distclean: clean
 # when running a test program inside the Tony-Compiler directory.
 cleanall: distclean
 	find . -regex '.*\.\(asm\|imm\|ll\|o\|out\)' -type f -delete
-
-cleanintermidiate:
-	find . -regex '.*\.\(asm\|imm\|ll\|o\|out\)' -type f -delete
